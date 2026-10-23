@@ -170,17 +170,37 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                child: Image.network(
-                  room.imageUrl,
-                  height: 170,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 170,
-                    color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade200,
-                    child: Icon(Icons.image_not_supported, color: isDark ? const Color(0xFF64748B) : Colors.grey),
-                  ),
-                ),
+                child: room.imageUrl.trim().isNotEmpty
+                    ? Image.network(
+                        room.imageUrl,
+                        height: 170,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          height: 170,
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.bed_outlined, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 40),
+                              const SizedBox(height: 6),
+                              Text('No photo uploaded', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Container(
+                        height: 170,
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.bed_outlined, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 40),
+                            const SizedBox(height: 6),
+                            Text('No photo uploaded', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                          ],
+                        ),
+                      ),
               ),
               Positioned(
                 top: 12,

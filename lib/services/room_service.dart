@@ -14,11 +14,12 @@ class RoomService {
   // ==========================================
   static Future<List<CategoryModel>> getCategories() async {
     return [
-      CategoryModel(id: 1, name: 'Single Rooms', icon: 'single_bed', description: 'Cozy modern single bed rooms'),
-      CategoryModel(id: 2, name: 'Double / King Rooms', icon: 'bed', description: 'Luxury King and Double bed rooms'),
-      CategoryModel(id: 3, name: 'Executive Suites', icon: 'meeting_room', description: 'Corner suites with private lounge'),
-      CategoryModel(id: 4, name: 'VIP Presidential Villas', icon: 'villa', description: 'Presidential and pool villas'),
-      CategoryModel(id: 5, name: 'Family Suites', icon: 'family_restroom', description: 'Spacious interconnected suites'),
+      CategoryModel(id: 1, name: 'Single Rooms', icon: 'single_bed', description: 'Cozy private room with 1 Single Bed'),
+      CategoryModel(id: 2, name: 'Double Rooms', icon: 'bed', description: 'Room with 1 Double or Queen/King Bed'),
+      CategoryModel(id: 3, name: 'Twin Rooms', icon: 'hotel', description: 'Room with 2 separate Single Beds'),
+      CategoryModel(id: 4, name: 'Triple Rooms', icon: 'groups', description: 'Room for 3 guests with separate beds'),
+      CategoryModel(id: 5, name: 'Family Rooms', icon: 'family_restroom', description: 'Large room with multiple beds for 4+ guests'),
+      CategoryModel(id: 6, name: 'Suite Rooms', icon: 'meeting_room', description: 'Spacious suite with separate living room'),
     ];
   }
 
@@ -41,18 +42,28 @@ class RoomService {
 
   static String getRoomTypeDisplayName(String? type) {
     switch (type?.toUpperCase()) {
+      case 'STANDARD':
+        return 'Standard Room';
+      case 'DELUXE':
+        return 'Deluxe Room';
+      case 'EXECUTIVE':
+      case 'PREMIUM':
+        return 'Executive Room';
       case 'SINGLE':
         return 'Single Room';
       case 'DOUBLE':
-        return 'Double / King Room';
-      case 'SUITE':
-        return 'Executive Suite';
-      case 'VIP':
-        return 'VIP Presidential Villa';
+        return 'Double Room';
+      case 'TWIN':
+        return 'Twin Room';
+      case 'TRIPLE':
+        return 'Triple Room';
       case 'FAMILY':
-        return 'Family Suite';
+        return 'Family Room';
+      case 'SUITE':
+      case 'VIP':
+        return 'Suite Room';
       default:
-        return (type != null && type.isNotEmpty) ? '$type Room' : 'Double / King Room';
+        return (type != null && type.isNotEmpty) ? '$type Room' : 'Double Room';
     }
   }
 
@@ -73,7 +84,7 @@ class RoomService {
     }
     final imgUrl = rawImages.isNotEmpty
         ? rawImages.first
-        : 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800';
+        : '';
 
     final rawType = r['type']?.toString().toUpperCase() ?? 'DOUBLE';
     final typeDisplay = getRoomTypeDisplayName(rawType);
@@ -94,9 +105,17 @@ class RoomService {
             ? r['hotel']!['mapUrl'].toString()
             : 'https://maps.google.com/?q=Riverside+Blvd+Phnom+Penh');
 
+    final customName = (r['name']?.toString().trim().isNotEmpty == true)
+        ? r['name'].toString().trim()
+        : typeDisplay;
+
+    final parsedAvailable = (r['availableUnits'] as num?)?.toInt() ?? 5;
+    final parsedTotal = (r['totalRooms'] as num?)?.toInt() ?? parsedAvailable;
+
     return ServiceModel(
       id: r['id'] ?? (100 + (int.tryParse(roomNum) ?? 0)),
-      name: 'Room $roomNum · $typeDisplay',
+      hotelId: (r['hotel'] != null ? (r['hotel']['id'] as num?)?.toInt() : null) ?? 1,
+      name: customName, // Honors user's custom room name if set!
       description: r['description'] ?? 'Spacious and luxury hotel room with modern amenities.',
       durationMinutes: 1440,
       price: parsedPrice,
@@ -104,7 +123,7 @@ class RoomService {
       rating: parsedRating,
       reviewCount: parsedReviewCount,
       imageUrl: imgUrl,
-      images: rawImages.isNotEmpty ? rawImages : [imgUrl],
+      images: rawImages,
       isFeatured: parsedPrice >= 75 || parsedRating >= 4.9 || rawType == 'VIP' || rawType == 'SUITE',
       isPopular: true,
       categoryName: typeDisplay,
@@ -117,6 +136,9 @@ class RoomService {
       mapUrl: parsedMapUrl,
       bedType: parsedBedType,
       roomType: rawType,
+      roomTier: r['roomTier']?.toString().toUpperCase() ?? 'STANDARD',
+      availableUnits: parsedAvailable,
+      totalRooms: parsedTotal,
     );
   }
 
@@ -131,70 +153,64 @@ class RoomService {
     bool? popular,
   }) async {
     List<ServiceModel> allRooms = [];
+    bool apiSuccess = false;
 
-    // 1. Fetch live rooms from /api/rooms/hotel/1 (directly reflects Admin CRUD & image uploads!)
+    // 1. Fetch live rooms from /api/rooms/hotel/1 (directly reflects Admin/Owner CRUD)
     try {
       final resRooms = await http.get(Uri.parse('${ApiClient.baseUrl}/rooms/hotel/1')).timeout(const Duration(seconds: 10));
       if (resRooms.statusCode == 200) {
+        apiSuccess = true;
         final List list = jsonDecode(utf8.decode(resRooms.bodyBytes));
-        for (var r in list) {
-          allRooms.add(convertRoomJsonToServiceModel(r as Map<String, dynamic>));
+
+        for (var item in list) {
+          final r = item as Map<String, dynamic>;
+          final model = convertRoomJsonToServiceModel(r);
+          allRooms.add(model);
         }
       }
     } catch (e) {
       debugPrint('Error loading live rooms from /api/rooms/hotel/1: $e');
     }
 
-    // Only if /api/rooms/hotel/1 is empty, fallback to /api/services
-    if (allRooms.isEmpty) {
-      try {
-        final res = await http.get(Uri.parse('${ApiClient.baseUrl}/services')).timeout(const Duration(seconds: 5));
-        if (res.statusCode == 200) {
-          final List list = jsonDecode(utf8.decode(res.bodyBytes));
-          allRooms = list.map((e) => ServiceModel.fromJson(e)).toList();
-        }
-      } catch (e) {
-        debugPrint('Error loading services: $e');
-      }
+    // Only if API completely failed to connect (e.g. backend offline / network failure):
+    if (!apiSuccess) {
+      return _getFallbackServices(query: query, categoryId: categoryId);
     }
 
-    if (allRooms.isNotEmpty) {
-      var filtered = allRooms;
-      if (query.isNotEmpty) {
-        final q = query.toLowerCase();
-        filtered = filtered.where((r) =>
-          r.name.toLowerCase().contains(q) ||
-          r.description.toLowerCase().contains(q) ||
-          r.categoryName.toLowerCase().contains(q) ||
-          r.roomType.toLowerCase().contains(q) ||
-          r.bedType.toLowerCase().contains(q) ||
-          r.province.toLowerCase().contains(q)
-        ).toList();
-      }
-
-      // Filter by roomType code (e.g. 'SINGLE', 'DOUBLE', 'SUITE', 'VIP', 'FAMILY')
-      if (roomType != null && roomType.isNotEmpty && roomType.toUpperCase() != 'ALL') {
-        final target = roomType.toUpperCase();
-        filtered = filtered.where((r) => r.roomType.toUpperCase() == target).toList();
-      } else if (categoryId != null && categoryId > 0) {
-        filtered = filtered.where((r) {
-          final type = r.roomType.toUpperCase();
-          if (categoryId == 1) return type == 'SINGLE';
-          if (categoryId == 2) return type == 'DOUBLE';
-          if (categoryId == 3) return type == 'SUITE';
-          if (categoryId == 4) return type == 'VIP';
-          if (categoryId == 5) return type == 'FAMILY';
-          return true;
-        }).toList();
-      }
-
-      if (featured == true) {
-        filtered = filtered.where((r) => r.isFeatured).toList();
-      }
-      return filtered;
+    // When API succeeded (even if 0 rooms because all rooms were deleted in dashboard)
+    var filtered = allRooms;
+    if (query.isNotEmpty) {
+      final q = query.toLowerCase();
+      filtered = filtered.where((r) =>
+        r.name.toLowerCase().contains(q) ||
+        r.description.toLowerCase().contains(q) ||
+        r.categoryName.toLowerCase().contains(q) ||
+        r.roomType.toLowerCase().contains(q) ||
+        r.bedType.toLowerCase().contains(q) ||
+        r.province.toLowerCase().contains(q)
+      ).toList();
     }
 
-    return _getFallbackServices(query: query, categoryId: categoryId);
+    // Filter by roomType code (e.g. 'SINGLE', 'DOUBLE', 'SUITE', 'VIP', 'FAMILY')
+    if (roomType != null && roomType.isNotEmpty && roomType.toUpperCase() != 'ALL') {
+      final target = roomType.toUpperCase();
+      filtered = filtered.where((r) => r.roomType.toUpperCase() == target).toList();
+    } else if (categoryId != null && categoryId > 0) {
+      filtered = filtered.where((r) {
+        final type = r.roomType.toUpperCase();
+        if (categoryId == 1) return type == 'SINGLE';
+        if (categoryId == 2) return type == 'DOUBLE';
+        if (categoryId == 3) return type == 'SUITE';
+        if (categoryId == 4) return type == 'VIP';
+        if (categoryId == 5) return type == 'FAMILY';
+        return true;
+      }).toList();
+    }
+
+    if (featured == true) {
+      filtered = filtered.where((r) => r.isFeatured).toList();
+    }
+    return filtered;
   }
 
   static Future<ServiceModel> getServiceById(int id) async {
@@ -329,26 +345,98 @@ class RoomService {
         id: 1,
         hotelId: hotelId,
         roomNumber: '101',
-        type: 'Deluxe City View Suite',
-        priceUsd: 120.0,
-        priceKhr: 492000.0,
+        name: 'Standard Room (Fan)',
+        type: 'STANDARD',
+        priceUsd: 28.0,
+        priceKhr: 114800.0,
         maxGuests: 2,
-        bedType: '1 King Bed',
-        description: 'Modern luxury suite overlooking the Phnom Penh skyline.',
-        images: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=600',
+        bedType: '1 Queen Bed (Fan Room)',
+        description: 'Cozy standard room with ceiling fan, private bathroom, and essential amenities.',
+        images: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=600',
         status: 'AVAILABLE',
       ),
       RoomModel(
         id: 2,
         hotelId: hotelId,
-        roomNumber: '205',
-        type: 'Presidential Pool Villa Suite',
-        priceUsd: 220.0,
-        priceKhr: 902000.0,
-        maxGuests: 4,
-        bedType: '2 King Beds',
-        description: 'Spacious villa with personal pool and luxury amenities.',
+        roomNumber: '102',
+        name: 'Standard Room (AC)',
+        type: 'STANDARD',
+        priceUsd: 38.0,
+        priceKhr: 155800.0,
+        maxGuests: 2,
+        bedType: '1 Queen Bed (AC Room)',
+        description: 'Standard air-conditioned room with private bathroom, fast WiFi, and comfortable bed.',
+        images: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=600',
+        status: 'AVAILABLE',
+      ),
+      RoomModel(
+        id: 3,
+        hotelId: hotelId,
+        roomNumber: '201',
+        name: 'Deluxe King Room (AC)',
+        type: 'DELUXE',
+        priceUsd: 65.0,
+        priceKhr: 266500.0,
+        maxGuests: 2,
+        bedType: '1 King Bed (AC Room)',
+        description: 'Spacious deluxe room with stylish decor, 1 King size bed, air conditioning, and city view balcony.',
         images: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?w=600',
+        status: 'AVAILABLE',
+      ),
+      RoomModel(
+        id: 4,
+        hotelId: hotelId,
+        roomNumber: '301',
+        name: 'Executive Premium Room (AC)',
+        type: 'EXECUTIVE',
+        priceUsd: 110.0,
+        priceKhr: 451000.0,
+        maxGuests: 2,
+        bedType: '1 King Bed (AC Room)',
+        description: 'Luxury executive room with designer interior, lounge sitting area, espresso bar, and VIP service.',
+        images: 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=600',
+        status: 'AVAILABLE',
+      ),
+      RoomModel(
+        id: 5,
+        hotelId: hotelId,
+        roomNumber: '202',
+        name: 'Double Room (King Bed)',
+        type: 'DOUBLE',
+        priceUsd: 55.0,
+        priceKhr: 225500.0,
+        maxGuests: 2,
+        bedType: '1 King Bed (AC Room)',
+        description: 'Comfortable double room with 1 large king bed, air conditioning, and full amenities.',
+        images: 'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=600',
+        status: 'AVAILABLE',
+      ),
+      RoomModel(
+        id: 6,
+        hotelId: hotelId,
+        roomNumber: '203',
+        name: 'Superior Twin Room',
+        type: 'TWIN',
+        priceUsd: 55.0,
+        priceKhr: 225500.0,
+        maxGuests: 2,
+        bedType: '2 Single Beds (AC Room)',
+        description: 'Twin room with two separate comfortable single beds and modern air conditioning.',
+        images: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=600',
+        status: 'AVAILABLE',
+      ),
+      RoomModel(
+        id: 7,
+        hotelId: hotelId,
+        roomNumber: '401',
+        name: 'Grand Luxury Suite',
+        type: 'SUITE',
+        priceUsd: 140.0,
+        priceKhr: 574000.0,
+        maxGuests: 3,
+        bedType: '1 King Bed + Living Area (AC)',
+        description: 'Top-tier luxury suite with panoramic river views, private living room, and soaking tub.',
+        images: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=600',
         status: 'AVAILABLE',
       ),
     ];
@@ -406,11 +494,35 @@ class RoomService {
     final all = [
       ServiceModel(
         id: 1,
-        name: 'Room 201 - Riverside Deluxe King Suite',
-        description: 'Spacious waterfront luxury hotel room overlooking the Mekong river. Features 1 King Bed, private balcony, luxury rain shower, high-speed WiFi and gourmet breakfast.',
+        name: 'Cozy Single Studio Room',
+        description: 'Cozy private room for 1 guest with 1 Single Bed.',
         durationMinutes: 1440,
-        price: 75.0,
-        priceKhr: 307500.0,
+        price: 35.0,
+        priceKhr: 143500.0,
+        rating: 4.8,
+        reviewCount: 65,
+        imageUrl: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
+        images: const [
+          'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
+          'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
+        ],
+        isFeatured: false,
+        isPopular: true,
+        categoryName: 'Single Rooms',
+        locationName: 'Boss_Heng Luxury Hotel',
+        locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
+        province: 'Phnom Penh',
+        providers: [_getFallbackProviders()[3]],
+        bedType: '1 Single Bed',
+        roomType: 'SINGLE',
+      ),
+      ServiceModel(
+        id: 2,
+        name: 'Deluxe King Double Room',
+        description: 'Comfortable room with 1 Double or Queen/King Bed for 2 guests.',
+        durationMinutes: 1440,
+        price: 49.0,
+        priceKhr: 200900.0,
         rating: 4.9,
         reviewCount: 128,
         imageUrl: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
@@ -421,181 +533,121 @@ class RoomService {
         ],
         isFeatured: true,
         isPopular: true,
-        categoryName: 'Deluxe Rooms',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
+        categoryName: 'Double Rooms',
+        locationName: 'Boss_Heng Luxury Hotel',
         locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
         province: 'Phnom Penh',
         providers: [_getFallbackProviders()[3]],
-      ),
-      ServiceModel(
-        id: 2,
-        name: 'Room 301 - Executive Panoramic Suite',
-        description: 'Executive corner suite with separate living area, 1 King bed + 1 Sofa bed, espresso coffee machine, marble bathroom, and panoramic city vistas.',
-        durationMinutes: 1440,
-        price: 140.0,
-        priceKhr: 574000.0,
-        rating: 5.0,
-        reviewCount: 95,
-        imageUrl: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
-        images: const [
-          'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
-          'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
-          'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800',
-        ],
-        isFeatured: true,
-        isPopular: true,
-        categoryName: 'Executive Suites',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
-        locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
-        province: 'Phnom Penh',
-        providers: [_getFallbackProviders()[3]],
+        bedType: '1 Double / King Bed',
+        roomType: 'DOUBLE',
       ),
       ServiceModel(
         id: 3,
-        name: 'Room 401 - VIP Presidential Penthouse Villa',
-        description: 'Ultra-luxurious top-floor presidential suite with 2 King Beds, private jacuzzi plunge pool, 24/7 personal butler service, and complimentary champagne.',
+        name: 'Superior Twin Bed Room',
+        description: 'Spacious room with 2 separate Single Beds for 2 guests.',
         durationMinutes: 1440,
-        price: 220.0,
-        priceKhr: 902000.0,
+        price: 55.0,
+        priceKhr: 225500.0,
+        rating: 4.8,
+        reviewCount: 92,
+        imageUrl: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?w=800',
+        images: const [
+          'https://images.unsplash.com/photo-1582719508461-905c673771fd?w=800',
+          'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
+        ],
+        isFeatured: true,
+        isPopular: true,
+        categoryName: 'Twin Rooms',
+        locationName: 'Boss_Heng Luxury Hotel',
+        locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
+        province: 'Phnom Penh',
+        providers: [_getFallbackProviders()[3]],
+        bedType: '2 Single Beds',
+        roomType: 'TWIN',
+      ),
+      ServiceModel(
+        id: 4,
+        name: 'Executive Triple Suite',
+        description: 'Ideal for 3 guests with 1 Double Bed and 1 Single Bed, or 3 separate beds.',
+        durationMinutes: 1440,
+        price: 75.0,
+        priceKhr: 307500.0,
         rating: 4.9,
-        reviewCount: 64,
+        reviewCount: 74,
         imageUrl: 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800',
         images: const [
           'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800',
-          'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800',
           'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800',
         ],
         isFeatured: true,
         isPopular: true,
-        categoryName: 'VIP Villas',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
+        categoryName: 'Triple Rooms',
+        locationName: 'Boss_Heng Luxury Hotel',
         locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
         province: 'Phnom Penh',
         providers: [_getFallbackProviders()[3]],
+        bedType: '1 Double + 1 Single Bed',
+        roomType: 'TRIPLE',
       ),
       ServiceModel(
-        id: 4,
-        name: 'Room 101 - Modern Cozy Single Room',
-        description: 'Comfortable modern single room with ergonomic workstation, high-speed fiber internet, smart TV, and premium organic toiletries.',
+        id: 5,
+        name: 'Grand Family Residence Room',
+        description: 'Large family room with multiple beds accommodating 4 or more guests.',
         durationMinutes: 1440,
-        price: 45.0,
-        priceKhr: 184500.0,
-        rating: 4.8,
-        reviewCount: 88,
-        imageUrl: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
-        images: const [
-          'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
-          'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
-        ],
-        isFeatured: false,
-        isPopular: true,
-        categoryName: 'Deluxe Rooms',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
-        locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
-        province: 'Phnom Penh',
-        providers: [_getFallbackProviders()[3]],
-      ),
-      ServiceModel(
-        id: 11,
-        name: 'Room 501 - Grand Family Interconnected Suite',
-        description: 'Designed for families with two master bedrooms, 1 King bed and 2 Twin beds, kids play area, and double vanity bathroom.',
-        durationMinutes: 1440,
-        price: 160.0,
-        priceKhr: 656000.0,
+        price: 95.0,
+        priceKhr: 389500.0,
         rating: 4.9,
-        reviewCount: 42,
+        reviewCount: 110,
         imageUrl: 'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800',
         images: const [
           'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800',
           'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
         ],
         isFeatured: true,
-        isPopular: false,
-        categoryName: 'Family Suites',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
+        isPopular: true,
+        categoryName: 'Family Rooms',
+        locationName: 'Boss_Heng Luxury Hotel',
         locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
         province: 'Phnom Penh',
         providers: [_getFallbackProviders()[3]],
+        bedType: 'Multiple Beds (4+ Guests)',
+        roomType: 'FAMILY',
       ),
       ServiceModel(
-        id: 12,
-        name: 'Room VIP-777 - 2 King Beds',
-        description: 'Ultra-exclusive VIP Suite with private bar, infinity view balcony, jacuzzi and 24/7 butler service.',
+        id: 6,
+        name: 'Presidential Royal Suite Room',
+        description: 'Luxury executive suite with separate living area and premium amenities.',
         durationMinutes: 1440,
-        price: 299.0,
-        priceKhr: 1225900.0,
+        price: 140.0,
+        priceKhr: 574000.0,
         rating: 5.0,
-        reviewCount: 165,
+        reviewCount: 152,
         imageUrl: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
         images: const [
           'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
-          'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800',
+          'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
           'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800',
-          'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800',
-          'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800',
         ],
         isFeatured: true,
         isPopular: true,
-        categoryName: 'VIP Villas',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
+        categoryName: 'Suite Rooms',
+        locationName: 'Boss_Heng Luxury Hotel',
         locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
         province: 'Phnom Penh',
         providers: [_getFallbackProviders()[3]],
-      ),
-      ServiceModel(
-        id: 13,
-        name: 'Room 502 - 1 King Bed',
-        description: 'Executive Panoramic Suite with river view balcony and espresso bar.',
-        durationMinutes: 1440,
-        price: 190.0,
-        priceKhr: 779000.0,
-        rating: 4.9,
-        reviewCount: 110,
-        imageUrl: 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800',
-        images: const [
-          'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800',
-          'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
-          'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
-        ],
-        isFeatured: true,
-        isPopular: true,
-        categoryName: 'Executive Suites',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
-        locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
-        province: 'Phnom Penh',
-        providers: [_getFallbackProviders()[3]],
-      ),
-      ServiceModel(
-        id: 15,
-        name: 'Room 302 - 1 King Bed',
-        description: 'Modern luxury double room with customized interior decoration, high-speed fiber WiFi and complimentary buffet breakfast.',
-        durationMinutes: 1440,
-        price: 75.0,
-        priceKhr: 307500.0,
-        rating: 4.8,
-        reviewCount: 92,
-        imageUrl: 'https://i.pinimg.com/736x/5c/c2/8f/5cc28fedc6c9c731694c7e11f36775f3.jpg',
-        images: const [
-          'https://i.pinimg.com/736x/5c/c2/8f/5cc28fedc6c9c731694c7e11f36775f3.jpg',
-          'https://i.pinimg.com/736x/5c/f6/f7/5cf6f7b980a66374660de3c09bf22fbb.jpg',
-          'https://i.pinimg.com/736x/2d/ed/9e/2ded9ea0574075e72c6f7c1860437c8e.jpg',
-        ],
-        isFeatured: false,
-        isPopular: true,
-        categoryName: 'Deluxe Rooms',
-        locationName: 'Grand Luxury Hotel Phnom Penh',
-        locationAddress: 'Riverside Blvd, Daun Penh, Phnom Penh',
-        province: 'Phnom Penh',
-        providers: [_getFallbackProviders()[3]],
+        bedType: '1 King Bed + Living Area',
+        roomType: 'SUITE',
       ),
     ];
 
     return all.where((s) {
       if (categoryId != null && categoryId > 0) {
-        if (categoryId == 2 && s.categoryName != 'Deluxe Rooms') return false;
-        if (categoryId == 3 && s.categoryName != 'Executive Suites') return false;
-        if (categoryId == 4 && s.categoryName != 'VIP Villas') return false;
-        if (categoryId == 5 && s.categoryName != 'Family Suites') return false;
+        if (categoryId == 1 && s.roomType != 'SINGLE') return false;
+        if (categoryId == 2 && s.roomType != 'DOUBLE') return false;
+        if (categoryId == 3 && s.roomType != 'TWIN') return false;
+        if (categoryId == 4 && s.roomType != 'TRIPLE') return false;
+        if (categoryId == 5 && s.roomType != 'FAMILY') return false;
+        if (categoryId == 6 && s.roomType != 'SUITE') return false;
       }
       if (query.isNotEmpty) {
         final q = query.toLowerCase();

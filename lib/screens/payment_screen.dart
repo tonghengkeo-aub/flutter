@@ -4,6 +4,7 @@ import '../models/service_model.dart';
 import '../models/hotel_model.dart';
 import '../models/room_model.dart';
 import '../services/api_service.dart';
+import '../widgets/khqr_payment_dialog.dart';
 import 'main_nav_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -29,6 +30,15 @@ class PaymentScreen extends StatefulWidget {
   final double? totalPriceUsd;
   final double? totalPriceKhr;
   final String? specialRequests;
+  final int unitCount;
+
+  // Money & Deposit Breakdown
+  final bool payDepositOnly;
+  final double? depositRequired;
+  final double? balanceDue;
+  final double? serviceCharge;
+  final double? tax;
+  final List<Map<String, dynamic>> extras;
 
   const PaymentScreen({
     super.key,
@@ -52,6 +62,13 @@ class PaymentScreen extends StatefulWidget {
     this.totalPriceUsd,
     this.totalPriceKhr,
     this.specialRequests,
+    this.unitCount = 1,
+    this.payDepositOnly = false,
+    this.depositRequired,
+    this.balanceDue,
+    this.serviceCharge,
+    this.tax,
+    this.extras = const [],
   });
 
   @override
@@ -63,6 +80,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool isProcessing = false;
 
   double get displayFinalPrice {
+    if (widget.payDepositOnly && widget.depositRequired != null && widget.depositRequired! > 0) {
+      return widget.depositRequired!;
+    }
     if (widget.finalPrice > 0) return widget.finalPrice;
     if (widget.totalPriceUsd != null && widget.totalPriceUsd! > 0) return widget.totalPriceUsd!;
     return 45.0;
@@ -84,6 +104,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
         serviceId: widget.service?.id ?? 1,
         providerId: widget.provider?.id ?? 1,
         locationId: 1,
+        roomId: widget.room?.id,
+        hotelId: widget.hotel?.id ?? widget.room?.hotelId,
+        numberOfRooms: widget.unitCount > 0 ? widget.unitCount : 1,
+        checkIn: widget.checkInStr ?? effectiveDate,
+        checkOut: widget.checkOutStr,
         bookingDate: effectiveDate,
         bookingTime: widget.bookingTime,
         guestName: widget.guestName,
@@ -92,16 +117,53 @@ class _PaymentScreenState extends State<PaymentScreen> {
         notes: widget.notes ?? widget.specialRequests,
         couponCode: widget.couponCode,
         paymentMethod: selectedMethod,
+        extras: widget.extras,
+        payDepositOnly: widget.payDepositOnly,
       );
 
       if (!mounted) return;
+
+      if (selectedMethod == 'KHQR') {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => KhqrPaymentDialog(
+            amountUsd: displayFinalPrice,
+            amountKhr: displayPriceKhr,
+            billNumber: booking.bookingCode,
+            bookingId: booking.id,
+            onPaymentSuccess: (successData) {
+              showSuccessDialog(booking.bookingCode);
+            },
+          ),
+        );
+        return;
+      }
+
       showSuccessDialog(booking.bookingCode);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.redAccent,
+        final alertMsg = e.toString().replaceAll('Exception: ', '').trim();
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)),
+                SizedBox(width: 8),
+                Text('Booking Alert', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ],
+            ),
+            content: Text(
+              alertMsg.isNotEmpty ? alertMsg : 'Unable to complete booking. Please try again.',
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
         );
       }
@@ -157,7 +219,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
               const SizedBox(height: 14),
               Text(
-                'Your appointment has been scheduled and recorded. You can view your pass under Bookings.',
+                'Your room reservation has been confirmed and recorded. You can view your stay details under Bookings.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600, fontSize: 12),
               ),
@@ -222,7 +284,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('TOTAL PAYABLE AMOUNT', style: TextStyle(color: Color(0xFFEAB308), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                  Text(
+                    widget.payDepositOnly ? 'DEPOSIT AMOUNT DUE NOW (20%)' : 'TOTAL PAYABLE AMOUNT',
+                    style: const TextStyle(color: Color(0xFFEAB308), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -237,13 +302,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ),
                     ],
                   ),
+                  if (widget.payDepositOnly && widget.balanceDue != null && widget.balanceDue! > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Remaining Balance: \$${widget.balanceDue!.toStringAsFixed(2)} (payable at check-in)',
+                      style: const TextStyle(color: Color(0xFF86EFAC), fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
                   const Divider(color: Colors.white24, height: 24),
                   Row(
                     children: [
-                      const Icon(Icons.schedule, color: Colors.white60, size: 14),
+                      const Icon(Icons.calendar_today_outlined, color: Colors.white60, size: 14),
                       const SizedBox(width: 6),
                       Text(
-                        '$effectiveDate at ${widget.bookingTime}',
+                        (widget.checkInStr != null && widget.checkOutStr != null)
+                            ? 'Stay: ${widget.checkInStr} ➔ ${widget.checkOutStr} (${widget.totalNights ?? 1} nights)'
+                            : '$effectiveDate at ${widget.bookingTime}',
                         style: const TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ],
@@ -304,51 +378,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
             _buildPaymentOption(
               key: 'CASH',
               title: 'Pay Upon Arrival / Cash',
-              subtitle: 'Settle directly at front desk or appointment location',
+              subtitle: 'Settle directly at hotel reception / front desk',
               icon: Icons.payments_outlined,
               badge: null,
               badgeColor: null,
               isDark: isDark,
             ),
             const SizedBox(height: 24),
-
-            // KHQR Interactive Preview
-            if (selectedMethod == 'KHQR') ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF131D32) : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: isDark ? const Color(0xFF22314E) : Colors.grey.shade300),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: const Color(0xFFDC2626), borderRadius: BorderRadius.circular(6)),
-                          child: const Text('KHQR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
-                        ),
-                        const SizedBox(width: 8),
-                        Text('Bakong Unified QR Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? const Color(0xFFF8FAFC) : Colors.black87)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Icon(Icons.qr_code_2, size: 160, color: isDark ? Colors.white : const Color(0xFF0F172A)),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Scan to pay \$${displayFinalPrice.toStringAsFixed(2)} / ${displayPriceKhr.toStringAsFixed(0)} KHR',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isDark ? const Color(0xFFFBBF24) : Colors.black87),
-                    ),
-                    const SizedBox(height: 4),
-                    Text('Supported by ABA, Acleda, Canadia, Wing & 30+ Banks', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600, fontSize: 11)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
 
             // Confirm & Pay Button
             SizedBox(

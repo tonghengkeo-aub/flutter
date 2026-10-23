@@ -400,15 +400,18 @@ class _ProfileTabState extends State<ProfileTab> {
             const SizedBox(height: 20),
 
             // Profile Actions & Settings
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade200),
-              ),
-              child: Column(
-                children: [
-                  // App Theme (Dark Mode / Light Mode) Tile
+            Material(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+              clipBehavior: Clip.antiAlias,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade200),
+                ),
+                child: Column(
+                  children: [
+                    // App Theme (Dark Mode / Light Mode) Tile
                   ListTile(
                     leading: ValueListenableBuilder<ThemeMode>(
                       valueListenable: ThemeService.themeModeNotifier,
@@ -478,7 +481,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+          ),
+          const SizedBox(height: 24),
 
             // Sign out button
             SizedBox(

@@ -135,9 +135,14 @@ class ApiService {
       BookingService.validateCoupon(code, spendAmount);
 
   static Future<BookingModel> createBooking({
-    required int serviceId,
-    required int providerId,
-    required int locationId,
+    int? serviceId,
+    int? providerId,
+    int? locationId,
+    int? roomId,
+    int? hotelId,
+    int? numberOfRooms,
+    String? checkIn,
+    String? checkOut,
     required String bookingDate,
     required String bookingTime,
     required String guestName,
@@ -146,11 +151,18 @@ class ApiService {
     String? notes,
     String? couponCode,
     String paymentMethod = 'KHQR',
+    List<Map<String, dynamic>> extras = const [],
+    bool payDepositOnly = false,
   }) =>
       BookingService.createBooking(
         serviceId: serviceId,
         providerId: providerId,
         locationId: locationId,
+        roomId: roomId,
+        hotelId: hotelId,
+        numberOfRooms: numberOfRooms,
+        checkIn: checkIn,
+        checkOut: checkOut,
         bookingDate: bookingDate,
         bookingTime: bookingTime,
         guestName: guestName,
@@ -159,6 +171,25 @@ class ApiService {
         notes: notes,
         couponCode: couponCode,
         paymentMethod: paymentMethod,
+        extras: extras,
+        payDepositOnly: payDepositOnly,
+      );
+
+  static Future<Map<String, dynamic>> calculatePrice({
+    required int roomId,
+    int unitCount = 1,
+    required String checkIn,
+    required String checkOut,
+    List<Map<String, dynamic>> extras = const [],
+    String couponCode = '',
+  }) =>
+      BookingService.calculatePrice(
+        roomId: roomId,
+        unitCount: unitCount,
+        checkIn: checkIn,
+        checkOut: checkOut,
+        extras: extras,
+        couponCode: couponCode,
       );
 
   static Future<List<BookingModel>> getMyBookings() =>

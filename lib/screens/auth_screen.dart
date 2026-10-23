@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import 'main_nav_screen.dart';
 
@@ -185,22 +186,87 @@ class _AuthScreenState extends State<AuthScreen> {
                       const SizedBox(height: 18),
 
                       if (!isLogin) ...[
-                        _buildLabel('Full Name *'),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildLabel('Full Name *'),
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 6),
+                              child: Text(
+                                'Letters only (A-Z)',
+                                style: TextStyle(color: Color(0xFF38BDF8), fontSize: 10.5, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
                         TextFormField(
                           controller: nameController,
+                          keyboardType: TextInputType.name,
+                          textCapitalization: TextCapitalization.words,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           style: const TextStyle(color: Colors.white),
-                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter your full name' : null,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z\u1780-\u17FF\s\.\-']")),
+                            LengthLimitingTextInputFormatter(60),
+                          ],
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) {
+                              return 'Please enter your full name';
+                            }
+                            final trimmed = v.trim();
+                            if (trimmed.length < 2) {
+                              return 'Full name must be at least 2 letters';
+                            }
+                            if (RegExp(r'[0-9]').hasMatch(trimmed)) {
+                              return 'Full name can only contain letters (no numbers)';
+                            }
+                            if (!RegExp(r"^[a-zA-Z\u1780-\u17FF\s\.\-']+$").hasMatch(trimmed)) {
+                              return 'Full name can only contain valid letters';
+                            }
+                            return null;
+                          },
                           decoration: _inputDecoration('e.g. Sophea Pich', Icons.person_outline),
                         ),
                         const SizedBox(height: 14),
 
-                        _buildLabel('Phone Number *'),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildLabel('Phone Number *'),
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 6),
+
+                              child: Text(
+                                'Numbers only ',
+                                style: TextStyle(color: Color(0xFF10B981), fontSize: 10.5, fontWeight: FontWeight.w500),
+                              ),
+                              
+                            ),
+                          ],
+                        ),
                         TextFormField(
                           controller: phoneController,
-                          keyboardType: TextInputType.phone,
+                          keyboardType: TextInputType.number,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           style: const TextStyle(color: Colors.white),
-                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter phone number' : null,
-                          decoration: _inputDecoration('012 xxx xxx', Icons.phone_outlined),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(12),
+                          ],
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) {
+                              return 'Please enter your phone number';
+                            }
+                            final trimmed = v.trim();
+                            if (!RegExp(r'^[0-9]+$').hasMatch(trimmed)) {
+                              return 'Phone number can only contain numbers (0-9)';
+                            }
+                            if (trimmed.length < 8 || trimmed.length > 12) {
+                              return 'Phone number must be 8 to 12 digits';
+                            }
+                            return null;
+                          },
+                          decoration: _inputDecoration('012345678', Icons.phone_outlined),
                         ),
                         const SizedBox(height: 14),
 
@@ -271,10 +337,17 @@ class _AuthScreenState extends State<AuthScreen> {
                       TextFormField(
                         controller: emailController,
                         keyboardType: TextInputType.emailAddress,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
                         style: const TextStyle(color: Colors.white),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                        ],
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return 'Please enter your email';
-                          if (!v.contains('@')) return 'Please enter a valid email';
+                          final trimmed = v.trim();
+                          if (!RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[a-zA-Z]{2,}$').hasMatch(trimmed)) {
+                            return 'Please enter a valid email address (e.g. user@domain.com)';
+                          }
                           return null;
                         },
                         decoration: _inputDecoration('user@domain.com', Icons.email_outlined),
@@ -285,6 +358,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       TextFormField(
                         controller: passwordController,
                         obscureText: obscurePassword,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
                         style: const TextStyle(color: Colors.white),
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Please enter password';

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import 'api_client.dart';
+import 'booking_service.dart';
 import 'favorite_service.dart';
 
 class AuthService {
@@ -58,6 +59,7 @@ class AuthService {
     authToken = null;
     currentUser = null;
     FavoriteService.favoriteNotifier.value = <int>{};
+    BookingService.clearLocalCache();
   }
 
   static Future<UserModel> login(String email, String password) async {
@@ -72,6 +74,7 @@ class AuthService {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
         authToken = data['token'];
         currentUser = UserModel.fromJson(data);
+        BookingService.clearLocalCache();
         await saveSession(currentUser!, authToken!);
         await FavoriteService.syncUserFavoritesFromServer(currentUser!.id);
         return currentUser!;
@@ -144,6 +147,7 @@ class AuthService {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
         authToken = data['token'];
         currentUser = UserModel.fromJson(data);
+        BookingService.clearLocalCache();
         await saveSession(currentUser!, authToken!);
         await FavoriteService.syncUserFavoritesFromServer(currentUser!.id);
         return currentUser!;

@@ -398,14 +398,33 @@ class _SearchScreenState extends State<SearchScreen> {
               // Left Column: Full Clear Tall Image
               SizedBox(
                 width: 125,
-                child: Image.network(
-                  item.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                    child: Icon(Icons.hotel_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 36),
-                  ),
-                ),
+                child: item.imageUrl.trim().isNotEmpty
+                    ? Image.network(
+                        item.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.bed_outlined, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 32),
+                              const SizedBox(height: 4),
+                              Text('No photo', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.bed_outlined, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 32),
+                            const SizedBox(height: 4),
+                            Text('No photo', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                          ],
+                        ),
+                      ),
               ),
 
               // Right Column: Hotel Room Info

@@ -36,9 +36,14 @@ class ServiceModel {
   final String mapUrl;
   final String bedType;
   final String roomType;
+  final String roomTier;
+  final int hotelId;
+  final int availableUnits;
+  final int totalRooms;
 
   ServiceModel({
     required this.id,
+    this.hotelId = 1,
     required this.name,
     required this.description,
     required this.durationMinutes,
@@ -60,20 +65,31 @@ class ServiceModel {
     this.mapUrl = 'https://maps.google.com/?q=Riverside+Blvd+Phnom+Penh',
     this.bedType = '1 King Bed',
     this.roomType = 'DOUBLE',
+    this.roomTier = 'STANDARD',
+    this.availableUnits = 1,
+    this.totalRooms = 1,
   });
+
+  String get cleanName {
+    final stripped = name.replaceFirst(RegExp(r'^Room\s+[A-Za-z0-9\-]+\s*[·\-–]\s*', caseSensitive: false), '').trim();
+    return stripped.isNotEmpty ? stripped : name;
+  }
 
   String get roomTypeDisplay {
     switch (roomType.toUpperCase()) {
       case 'SINGLE':
         return 'Single Room';
       case 'DOUBLE':
-        return 'Double / King Room';
-      case 'SUITE':
-        return 'Executive Suite';
-      case 'VIP':
-        return 'VIP Presidential Villa';
+        return 'Double Room';
+      case 'TWIN':
+        return 'Twin Room';
+      case 'TRIPLE':
+        return 'Triple Room';
       case 'FAMILY':
-        return 'Family Suite';
+        return 'Family Room';
+      case 'SUITE':
+      case 'VIP':
+        return 'Suite Room';
       default:
         return roomType.isNotEmpty ? roomType : categoryName;
     }
@@ -133,7 +149,7 @@ class ServiceModel {
 
     String mainImg = (json['imageUrl'] != null && json['imageUrl'].toString().isNotEmpty)
         ? _safeUrl(json['imageUrl'].toString())
-        : (imgList.isNotEmpty ? imgList.first : 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=800');
+        : (imgList.isNotEmpty ? imgList.first : '');
 
     if (imgList.isEmpty && mainImg.isNotEmpty) {
       imgList = [mainImg];
@@ -151,6 +167,13 @@ class ServiceModel {
     final String bType = json['bedType']?.toString().isNotEmpty == true
         ? json['bedType'].toString()
         : '1 King Bed';
+
+    final int aUnits = json['availableUnits'] != null
+        ? (int.tryParse(json['availableUnits'].toString()) ?? 5)
+        : 5;
+    final int tRooms = json['totalRooms'] != null
+        ? (int.tryParse(json['totalRooms'].toString()) ?? aUnits)
+        : aUnits;
 
     return ServiceModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
@@ -175,6 +198,10 @@ class ServiceModel {
       mapUrl: mUrl,
       bedType: bType,
       roomType: json['type']?.toString().toUpperCase() ?? (json['roomType']?.toString().toUpperCase() ?? 'DOUBLE'),
+      roomTier: json['roomTier'] != null && json['roomTier'].toString().isNotEmpty ? json['roomTier'].toString().toUpperCase() : 'STANDARD',
+      hotelId: json['hotel'] != null ? (json['hotel']['id'] ?? 1) : (json['hotelId'] ?? 1),
+      availableUnits: aUnits,
+      totalRooms: tRooms,
     );
   }
 }

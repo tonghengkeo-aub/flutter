@@ -4,7 +4,6 @@ import '../models/booking_model.dart';
 import '../models/notification_model.dart';
 import 'api_client.dart';
 import 'notification_service.dart';
-import 'room_service.dart';
 
 class BookingService {
   static final List<BookingModel> _localBookings = [];
@@ -103,12 +102,99 @@ class BookingService {
   }
 
   // ==========================================
+  // PRICE CALCULATION (BACKEND DRIVEN)
+  // ==========================================
+  static Future<Map<String, dynamic>> calculatePrice({
+    required int roomId,
+    int unitCount = 1,
+    required String checkIn,
+    required String checkOut,
+    List<Map<String, dynamic>> extras = const [],
+    String couponCode = '',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiClient.baseUrl}/bookings/calculate'),
+        headers: ApiClient.defaultHeaders(requiresAuth: false),
+        body: jsonEncode({
+          'roomId': roomId,
+          'unitCount': unitCount,
+          'checkIn': checkIn,
+          'checkOut': checkOut,
+          'extras': extras,
+          'couponCode': couponCode,
+        }),
+      ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      }
+    } catch (_) {}
+
+    // Fallback calculation matching backend precision formula
+    final inDate = DateTime.tryParse(checkIn) ?? DateTime.now();
+    final outDate = DateTime.tryParse(checkOut) ?? inDate.add(const Duration(days: 1));
+    int nights = outDate.difference(inDate).inDays;
+    if (nights <= 0) nights = 1;
+
+    double pricePerNight = 45.0;
+    double roomTotal = pricePerNight * nights * unitCount;
+    double extrasTotal = 0.0;
+    for (var e in extras) {
+      final p = (e['price'] as num?)?.toDouble() ?? 0.0;
+      final q = (e['quantity'] as num?)?.toInt() ?? 1;
+      extrasTotal += p * q;
+    }
+
+    double discount = 0.0;
+    final cleanCode = couponCode.trim().toUpperCase();
+    if (cleanCode == 'WELCOME10') {
+      discount = (roomTotal + extrasTotal) * 0.10;
+    } else if (cleanCode == 'KH2026') {
+      discount = (roomTotal + extrasTotal) * 0.15;
+    }
+
+    double taxable = (roomTotal + extrasTotal - discount).clamp(0.0, double.infinity);
+    double serviceCharge = taxable * 0.05;
+    double tax = (taxable + serviceCharge) * 0.10;
+    double total = taxable + serviceCharge + tax;
+    double depositRequired = total * 0.20;
+    double balanceDue = total - depositRequired;
+
+    return {
+      'nights': nights,
+      'quantity': unitCount,
+      'pricePerNight': pricePerNight,
+      'roomTotal': roomTotal,
+      'extrasTotal': extrasTotal,
+      'subtotal': roomTotal + extrasTotal,
+      'discount': discount,
+      'couponCode': cleanCode.isNotEmpty ? cleanCode : null,
+      'serviceCharge': serviceCharge,
+      'serviceChargePercent': 5.0,
+      'tax': tax,
+      'taxPercent': 10.0,
+      'total': total,
+      'totalKhr': total * 4100,
+      'depositPercent': 20.0,
+      'depositRequired': depositRequired,
+      'balanceDue': balanceDue,
+      'cancellationPolicy': 'Free cancellation up to 48 hours prior to check-in. Cancellations within 48 hours forfeit the deposit.',
+    };
+  }
+
+  // ==========================================
   // BOOKINGS MANAGEMENT
   // ==========================================
   static Future<BookingModel> createBooking({
-    required int serviceId,
-    required int providerId,
-    required int locationId,
+    int? serviceId,
+    int? providerId,
+    int? locationId,
+    int? roomId,
+    int? hotelId,
+    int? numberOfRooms,
+    String? checkIn,
+    String? checkOut,
     required String bookingDate,
     required String bookingTime,
     required String guestName,
@@ -117,25 +203,36 @@ class BookingService {
     String? notes,
     String? couponCode,
     String paymentMethod = 'KHQR',
+    List<Map<String, dynamic>> extras = const [],
+    bool payDepositOnly = false,
   }) async {
+    final Map<String, dynamic> body = {
+      if (serviceId != null && serviceId > 0) 'serviceId': serviceId,
+      if (providerId != null && providerId > 0) 'providerId': providerId,
+      if (locationId != null && locationId > 0) 'locationId': locationId,
+      if (roomId != null && roomId > 0) 'roomId': roomId,
+      if (hotelId != null && hotelId > 0) 'hotelId': hotelId,
+      'numberOfRooms': (numberOfRooms != null && numberOfRooms > 0) ? numberOfRooms : 1,
+      if (checkIn != null && checkIn.isNotEmpty) 'checkIn': checkIn,
+      if (checkOut != null && checkOut.isNotEmpty) 'checkOut': checkOut,
+      'bookingDate': bookingDate,
+      'bookingTime': bookingTime,
+      'guestName': guestName,
+      'guestPhone': guestPhone,
+      if (guestEmail != null && guestEmail.isNotEmpty) 'guestEmail': guestEmail,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+      if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
+      'paymentMethod': paymentMethod,
+      'extras': extras,
+      'payDepositOnly': payDepositOnly,
+    };
+
     try {
       final res = await http.post(
         Uri.parse('${ApiClient.baseUrl}/bookings'),
         headers: ApiClient.defaultHeaders(),
-        body: jsonEncode({
-          'serviceId': serviceId,
-          'providerId': providerId,
-          'locationId': locationId,
-          'bookingDate': bookingDate,
-          'bookingTime': bookingTime,
-          'guestName': guestName,
-          'guestPhone': guestPhone,
-          'guestEmail': guestEmail,
-          'notes': notes,
-          'couponCode': couponCode,
-          'paymentMethod': paymentMethod,
-        }),
-      ).timeout(const Duration(seconds: 4));
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 5));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
@@ -143,86 +240,57 @@ class BookingService {
         _localBookings.insert(0, created);
         return created;
       } else {
-        final err = jsonDecode(utf8.decode(res.bodyBytes));
-        throw Exception(err['message'] ?? 'Could not create booking');
+        String errMsg = 'Could not create booking';
+        try {
+          final err = jsonDecode(utf8.decode(res.bodyBytes));
+          if (err is Map) {
+            errMsg = err['message'] ?? err['error'] ?? errMsg;
+          }
+        } catch (_) {}
+        throw Exception(errMsg);
       }
     } catch (e) {
-      if (e.toString().contains('already booked')) rethrow;
+      rethrow;
     }
+  }
 
-    // Dynamic fallback booking
-    final services = await RoomService.getServices();
-    final service = services.firstWhere((s) => s.id == serviceId, orElse: () => services.first);
-    final providers = await RoomService.getProviders();
-    final provider = providers.firstWhere((p) => p.id == providerId, orElse: () => providers.first);
-
-    double discount = 0.0;
-    if (couponCode?.toUpperCase() == 'WELCOME10') discount = service.price * 0.10;
-    if (couponCode?.toUpperCase() == 'KH2026') discount = service.price * 0.15;
-    final finalP = service.price - discount;
-
-    final newBooking = BookingModel(
-      id: DateTime.now().millisecondsSinceEpoch % 10000,
-      bookingCode: 'BK-${DateTime.now().year}${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().microsecond % 1000}',
-      title: service.name,
-      providerName: provider.name,
-      locationAddress: service.locationAddress,
-      bookingDate: bookingDate,
-      bookingTime: bookingTime,
-      durationMinutes: service.durationMinutes,
-      totalPrice: service.price,
-      discountAmount: discount,
-      finalPrice: finalP,
-      finalPriceKhr: finalP * 4100,
-      guestName: guestName,
-      guestPhone: guestPhone,
-      guestEmail: guestEmail,
-      status: 'CONFIRMED',
-      imageUrl: service.imageUrl,
-    );
-
-    _localBookings.insert(0, newBooking);
-
-    NotificationService.addNotification(
-      NotificationModel(
-        id: DateTime.now().millisecondsSinceEpoch % 1000,
-        title: 'Booking Confirmed #${newBooking.bookingCode}',
-        message: 'Your booking for ${service.name} on $bookingDate at $bookingTime is confirmed.',
-        type: 'BOOKING_CONFIRMED',
-        isRead: false,
-        createdAt: 'Just now',
-      ),
-    );
-
-    return newBooking;
+  static void clearLocalCache() {
+    _localBookings.clear();
   }
 
   static Future<List<BookingModel>> getMyBookings() async {
     try {
+      final userEmail = ApiClient.currentUser?.email;
+      final queryParam = (userEmail != null && userEmail.isNotEmpty)
+          ? '?email=${Uri.encodeComponent(userEmail)}'
+          : '';
       final res = await http.get(
-        Uri.parse('${ApiClient.baseUrl}/bookings/my'),
+        Uri.parse('${ApiClient.baseUrl}/bookings/my$queryParam'),
         headers: ApiClient.defaultHeaders(isJson: false),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final List list = jsonDecode(utf8.decode(res.bodyBytes));
         final remote = list.map((e) => BookingModel.fromJson(e)).toList();
-        if (remote.isNotEmpty) return remote;
+        _localBookings.clear();
+        _localBookings.addAll(remote);
+        return remote;
       }
     } catch (_) {}
 
-    if (_localBookings.isEmpty) {
-      _seedDefaultBookings();
-    }
     return _localBookings;
   }
 
   static Future<List<BookingModel>> getUpcomingBookings() async {
     try {
+      final userEmail = ApiClient.currentUser?.email;
+      final queryParam = (userEmail != null && userEmail.isNotEmpty)
+          ? '?email=${Uri.encodeComponent(userEmail)}'
+          : '';
       final res = await http.get(
-        Uri.parse('${ApiClient.baseUrl}/bookings/upcoming'),
+        Uri.parse('${ApiClient.baseUrl}/bookings/upcoming$queryParam'),
         headers: ApiClient.defaultHeaders(isJson: false),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final List list = jsonDecode(utf8.decode(res.bodyBytes));
@@ -231,15 +299,19 @@ class BookingService {
     } catch (_) {}
 
     final all = await getMyBookings();
-    return all.where((b) => b.status == 'CONFIRMED' || b.status == 'RESCHEDULED' || b.status == 'PENDING').toList();
+    return all.where((b) => b.status == 'CONFIRMED' || b.status == 'RESCHEDULED' || b.status == 'PENDING' || b.status == 'CHECKED_IN').toList();
   }
 
   static Future<List<BookingModel>> getHistoryBookings() async {
     try {
+      final userEmail = ApiClient.currentUser?.email;
+      final queryParam = (userEmail != null && userEmail.isNotEmpty)
+          ? '?email=${Uri.encodeComponent(userEmail)}'
+          : '';
       final res = await http.get(
-        Uri.parse('${ApiClient.baseUrl}/bookings/history'),
+        Uri.parse('${ApiClient.baseUrl}/bookings/history$queryParam'),
         headers: ApiClient.defaultHeaders(isJson: false),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final List list = jsonDecode(utf8.decode(res.bodyBytes));
@@ -248,7 +320,7 @@ class BookingService {
     } catch (_) {}
 
     final all = await getMyBookings();
-    return all.where((b) => b.status == 'COMPLETED' || b.status == 'CANCELLED').toList();
+    return all.where((b) => b.status == 'COMPLETED' || b.status == 'CANCELLED' || b.status == 'NO_SHOW').toList();
   }
 
   static Future<BookingModel> rescheduleBooking({
@@ -383,46 +455,5 @@ class BookingService {
     } else {
       _localBookings.insert(0, updated);
     }
-  }
-
-  static void _seedDefaultBookings() {
-    _localBookings.addAll([
-      BookingModel(
-        id: 101,
-        bookingCode: 'BK-20260925-A101',
-        title: 'Room 201 - Riverside Deluxe King Suite',
-        providerName: 'Sreymom Chan (VIP Host)',
-        locationAddress: 'Riverside Luxury Grand Hotel, Sisowath Quay, Phnom Penh',
-        bookingDate: '2026-09-28',
-        bookingTime: '02:00 PM',
-        durationMinutes: 1440,
-        totalPrice: 75.0,
-        discountAmount: 7.5,
-        finalPrice: 67.5,
-        finalPriceKhr: 276750.0,
-        guestName: 'Sophea Pich',
-        guestPhone: '098111222',
-        status: 'CONFIRMED',
-        imageUrl: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
-      ),
-      BookingModel(
-        id: 102,
-        bookingCode: 'BK-20260920-B882',
-        title: 'Rosewood Executive Suite & Breakfast',
-        providerName: 'Concierge Sokha',
-        locationAddress: 'Vattanac Capital Tower, Monivong Blvd, Phnom Penh',
-        bookingDate: '2026-09-20',
-        bookingTime: '02:00 PM',
-        durationMinutes: 1440,
-        totalPrice: 180.0,
-        discountAmount: 18.0,
-        finalPrice: 162.0,
-        finalPriceKhr: 664200.0,
-        guestName: 'Sophea Pich',
-        guestPhone: '098111222',
-        status: 'COMPLETED',
-        imageUrl: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800',
-      ),
-    ]);
   }
 }

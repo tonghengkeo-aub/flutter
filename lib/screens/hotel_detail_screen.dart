@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/hotel_model.dart';
 import '../models/room_model.dart';
 import '../services/api_service.dart';
-import 'booking_form_screen.dart';
+import 'room_selection_screen.dart';
 
 class HotelDetailScreen extends StatefulWidget {
   final HotelModel hotel;
@@ -248,14 +248,33 @@ class _HotelDetailScreenState extends State<HotelDetailScreen> {
             child: SizedBox(
               height: 150,
               width: double.infinity,
-              child: Image.network(
-                room.firstImageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade200,
-                  child: const Icon(Icons.bed, size: 40, color: Colors.grey),
-                ),
-              ),
+              child: room.firstImageUrl.trim().isNotEmpty
+                  ? Image.network(
+                      room.firstImageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.bed_outlined, size: 36, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                            const SizedBox(height: 4),
+                            Text('No photo uploaded', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Container(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.bed_outlined, size: 36, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                          const SizedBox(height: 4),
+                          Text('No photo uploaded', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                        ],
+                      ),
+                    ),
             ),
           ),
           Padding(
@@ -267,7 +286,9 @@ class _HotelDetailScreenState extends State<HotelDetailScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Room ${room.roomNumber} (${room.type})',
+                      room.name != null && room.name!.trim().isNotEmpty
+                          ? room.name!.trim()
+                          : (room.type.isNotEmpty ? '${room.type} Room' : 'Hotel Room'),
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                     ),
                     Container(
@@ -318,17 +339,17 @@ class _HotelDetailScreenState extends State<HotelDetailScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => BookingFormScreen(hotel: hotel, room: room),
+                            builder: (_) => RoomSelectionScreen(hotel: hotel, initialRoom: room),
                           ),
                         );
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFEAB308),
-                        foregroundColor: const Color(0xFF0F172A),
+                        backgroundColor: const Color(0xFF006CE4),
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                       ),
-                      child: const Text('Book Now', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: const Text('Select Room', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),

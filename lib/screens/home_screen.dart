@@ -110,7 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (selectedRoomType != 'ALL') {
-      list = list.where((r) => r.roomType.toUpperCase() == selectedRoomType.toUpperCase()).toList();
+      if (selectedRoomType == 'SUITE') {
+        list = list.where((r) => r.roomType.toUpperCase() == 'SUITE' || r.roomType.toUpperCase() == 'VIP').toList();
+      } else {
+        list = list.where((r) => r.roomType.toUpperCase() == selectedRoomType.toUpperCase()).toList();
+      }
     }
 
     setState(() {
@@ -315,7 +319,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 24),
 
               // New & Featured Hotel Rooms Carousel (Top 4 to 5 Newest Rooms)
-              Row(
+              if (newestRooms.isNotEmpty) ...[
+                Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
@@ -374,17 +379,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 ClipRRect(
                                   borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                                  child: Image.network(
-                                    item.imageUrl,
-                                    height: 120,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Container(
-                                      height: 120,
-                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                                      child: Icon(Icons.hotel_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 36),
-                                    ),
-                                  ),
+                                  child: item.imageUrl.trim().isNotEmpty
+                                      ? Image.network(
+                                          item.imageUrl,
+                                          height: 120,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => _buildNoPhotoWidget(isDark, 120),
+                                        )
+                                      : _buildNoPhotoWidget(isDark, 120),
                                 ),
                                 Positioned(
                                   top: 10,
@@ -419,6 +422,25 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                 ),
+                                if (item.availableUnits <= 0)
+                                  Positioned(
+                                    bottom: 8,
+                                    left: 10,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDC2626),
+                                        borderRadius: BorderRadius.circular(4),
+                                        boxShadow: [
+                                          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 3, offset: const Offset(0, 1)),
+                                        ],
+                                      ),
+                                      child: const Text(
+                                        'Sold Out',
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.5),
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                             Padding(
@@ -442,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    item.name,
+                                    item.cleanName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -476,6 +498,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 28),
+              ],
 
               // All Available Hotel Rooms List
               Row(
@@ -572,16 +595,47 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Left Column: Full Clear Tall Image
+              // Left Column: Full Clear Tall Image with Real Inventory Badge
               SizedBox(
                 width: 125,
-                child: Image.network(
-                  item.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                    child: Icon(Icons.hotel_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 36),
-                  ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    item.imageUrl.trim().isNotEmpty
+                        ? Image.network(
+                            item.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => _buildNoPhotoWidget(isDark, double.infinity),
+                          )
+                        : _buildNoPhotoWidget(isDark, double.infinity),
+                    if (item.availableUnits <= 0)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDC2626),
+                            borderRadius: BorderRadius.circular(6),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.block, color: Colors.white, size: 10),
+                              SizedBox(width: 3),
+                              Text('Sold Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
 
@@ -639,7 +693,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       // Room Title
                       Text(
-                        item.name,
+                        item.cleanName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -754,15 +808,30 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 11,
                         ),
                       ),
-                      Text(
-                        item.foodType.isNotEmpty ? item.foodType : 'Breakfast included',
-                        style: TextStyle(
-                          color: (item.foodType.toLowerCase().contains('only') || item.foodType.toLowerCase().contains('no'))
-                              ? (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))
-                              : (isDark ? const Color(0xFF34D399) : const Color(0xFF059669)),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.foodType.isNotEmpty ? item.foodType : 'Breakfast included',
+                              style: TextStyle(
+                                color: (item.foodType.toLowerCase().contains('only') || item.foodType.toLowerCase().contains('no'))
+                                    ? (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))
+                                    : (isDark ? const Color(0xFF34D399) : const Color(0xFF059669)),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          if (item.availableUnits <= 0)
+                            const Text(
+                              'Sold Out',
+                              style: TextStyle(
+                                color: Color(0xFFDC2626),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
 
@@ -1005,14 +1074,37 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.network(
-                            room.imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              color: const Color(0xFF1E293B),
-                              child: const Icon(Icons.hotel_rounded, color: Colors.white54, size: 60),
-                            ),
-                          ),
+                          room.imageUrl.trim().isNotEmpty
+                              ? Image.network(
+                                  room.imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    color: const Color(0xFF1E293B),
+                                    child: const Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.bed_outlined, color: Colors.white54, size: 54),
+                                          SizedBox(height: 8),
+                                          Text('No photo uploaded', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w500)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  color: const Color(0xFF1E293B),
+                                  child: const Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.bed_outlined, color: Colors.white54, size: 54),
+                                        SizedBox(height: 8),
+                                        Text('No photo uploaded', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w500)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                           // Subtle top & bottom vignette gradient
                           Container(
                             decoration: BoxDecoration(
@@ -1078,7 +1170,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  room.name,
+                                  room.cleanName,
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -1175,18 +1267,20 @@ class _HomeScreenState extends State<HomeScreen> {
       'ALL': allRooms.length,
       'SINGLE': allRooms.where((r) => r.roomType.toUpperCase() == 'SINGLE').length,
       'DOUBLE': allRooms.where((r) => r.roomType.toUpperCase() == 'DOUBLE').length,
-      'SUITE': allRooms.where((r) => r.roomType.toUpperCase() == 'SUITE').length,
-      'VIP': allRooms.where((r) => r.roomType.toUpperCase() == 'VIP').length,
+      'TWIN': allRooms.where((r) => r.roomType.toUpperCase() == 'TWIN').length,
+      'TRIPLE': allRooms.where((r) => r.roomType.toUpperCase() == 'TRIPLE').length,
       'FAMILY': allRooms.where((r) => r.roomType.toUpperCase() == 'FAMILY').length,
+      'SUITE': allRooms.where((r) => r.roomType.toUpperCase() == 'SUITE' || r.roomType.toUpperCase() == 'VIP').length,
     };
 
     final List<Map<String, dynamic>> typePills = [
       {'code': 'ALL', 'label': 'All Room Types', 'icon': Icons.grid_view},
       {'code': 'SINGLE', 'label': 'Single Rooms', 'icon': Icons.single_bed_rounded},
-      {'code': 'DOUBLE', 'label': 'Double / King Rooms', 'icon': Icons.king_bed_rounded},
-      {'code': 'SUITE', 'label': 'Executive Suites', 'icon': Icons.meeting_room_rounded},
-      {'code': 'VIP', 'label': 'VIP Presidential Villas', 'icon': Icons.military_tech_rounded},
-      {'code': 'FAMILY', 'label': 'Family Suites', 'icon': Icons.family_restroom_rounded},
+      {'code': 'DOUBLE', 'label': 'Double Rooms', 'icon': Icons.king_bed_rounded},
+      {'code': 'TWIN', 'label': 'Twin Rooms', 'icon': Icons.hotel_rounded},
+      {'code': 'TRIPLE', 'label': 'Triple Rooms', 'icon': Icons.groups_rounded},
+      {'code': 'FAMILY', 'label': 'Family Rooms', 'icon': Icons.family_restroom_rounded},
+      {'code': 'SUITE', 'label': 'Suite Rooms', 'icon': Icons.meeting_room_rounded},
     ];
 
     return SizedBox(
@@ -1355,6 +1449,35 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(color: fg, fontSize: 10.5, fontWeight: FontWeight.bold),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNoPhotoWidget(bool isDark, double height, {double iconSize = 32}) {
+    return Container(
+      height: height,
+      width: double.infinity,
+      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.bed_outlined,
+              color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+              size: iconSize,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'No photo uploaded',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

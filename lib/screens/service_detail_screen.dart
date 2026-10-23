@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/service_model.dart';
 import '../services/api_service.dart';
-import 'booking_form_screen.dart';
+import 'room_selection_screen.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
   final ServiceModel service;
@@ -27,13 +27,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   void initState() {
     super.initState();
     if (widget.service.images.isNotEmpty) {
-      _galleryPhotos = List<String>.from(widget.service.images);
-    } else if (widget.service.imageUrl.isNotEmpty) {
-      _galleryPhotos = [widget.service.imageUrl];
+      _galleryPhotos = widget.service.images.where((s) => s.trim().isNotEmpty).toList();
+    } else if (widget.service.imageUrl.trim().isNotEmpty) {
+      _galleryPhotos = [widget.service.imageUrl.trim()];
     } else {
-      _galleryPhotos = [
-        'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
-      ];
+      _galleryPhotos = [];
     }
   }
 
@@ -60,6 +58,25 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   }
 
   Widget _buildImageWidget(String url, {BoxFit fit = BoxFit.cover}) {
+    if (url.trim().isEmpty) {
+      return Container(
+        color: const Color(0xFF1E293B),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.bed_outlined, color: Colors.grey.shade400, size: 44),
+              const SizedBox(height: 8),
+              Text(
+                'No photo uploaded',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (url.startsWith('data:image')) {
       final bytes = _decodeBase64(url);
       if (bytes.isNotEmpty) {
@@ -312,9 +329,26 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   Widget _buildPhotoMosaic() {
     if (_galleryPhotos.isEmpty) {
       return Container(
-        height: 200,
-        color: Colors.grey.shade100,
-        child: const Center(child: Icon(Icons.hotel_rounded, size: 50, color: Colors.grey)),
+        height: 220,
+        color: const Color(0xFF1E293B),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.bed_outlined, size: 54, color: Colors.grey.shade400),
+              const SizedBox(height: 10),
+              Text(
+                'No photo uploaded',
+                style: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -564,16 +598,16 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     final int reviewCount = widget.service.reviewCount > 0 ? widget.service.reviewCount : 128;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF090D16) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
         elevation: 0.5,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A), size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          widget.service.name,
+          widget.service.cleanName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold),
@@ -649,7 +683,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          widget.service.name,
+                          widget.service.cleanName,
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -717,21 +751,21 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         children: [
-                          const Icon(Icons.location_on, size: 16, color: Color(0xFF003580)),
+                          Icon(Icons.location_on, size: 16, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF003580)),
                           const SizedBox(width: 4),
                           Expanded(
                             child: RichText(
                               text: TextSpan(
-                                style: const TextStyle(color: Color(0xFF475569), fontSize: 13, height: 1.35),
+                                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569), fontSize: 13, height: 1.35),
                                 children: [
                                   TextSpan(
                                     text: widget.service.locationAddress.isNotEmpty
                                         ? '${widget.service.locationAddress}, ${widget.service.province}, Cambodia'
                                         : '#4&6, Street 148, Sangkat Phsar Kandal I, Daun Penh, Phnom Penh, Cambodia',
                                   ),
-                                  const TextSpan(
+                                  TextSpan(
                                     text: ' • Open in Maps ↗',
-                                    style: TextStyle(color: Color(0xFF003580), fontWeight: FontWeight.bold),
+                                    style: TextStyle(color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF003580), fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
@@ -755,9 +789,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Property highlights',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -793,7 +827,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ],
               ),
             ),
-            const Divider(height: 36, thickness: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 36, thickness: 1, color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
 
             // 4. Review Breakdown & Progress Bars (Screenshot 2)
             Padding(
@@ -806,7 +840,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF003580),
+                          color: isDark ? const Color(0xFF2563EB) : const Color(0xFF003580),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -820,11 +854,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                         children: [
                           Text(
                             bookingScore >= 4.8 ? 'Wonderful' : (bookingScore >= 4.5 ? 'Superb' : (bookingScore >= 4.0 ? 'Very Good' : 'Good')),
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                           ),
                           Text(
                             'See $reviewCount detailed reviews >',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF0284C7), fontWeight: FontWeight.w600),
+                            style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7), fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -853,35 +887,35 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Text(
                         _showAllReviewCategories ? 'Show less' : 'Show more categories',
-                        style: const TextStyle(color: Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ),
                   ),
 
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     'Guests who stayed here loved',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                     ),
-                    child: const Column(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           '"The rooftop pool and sunset view over the Mekong were unforgettable. Breakfast was fresh with great variety!"',
-                          style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13, color: Color(0xFF334155)),
+                          style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13, color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
                         ),
-                        SizedBox(height: 6),
+                        const SizedBox(height: 6),
                         Text(
                           '— Nicholas, United Kingdom (Couple)',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                         ),
                       ],
                     ),
@@ -889,7 +923,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ],
               ),
             ),
-            const Divider(height: 36, thickness: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 36, thickness: 1, color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
 
             // 5. Property Surroundings & Tabs (Screenshot 3)
             Padding(
@@ -897,9 +931,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Property surroundings',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 12),
 
@@ -947,7 +981,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF003580),
+                                  color: isDark ? const Color(0xFF2563EB) : const Color(0xFF003580),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: const Row(
@@ -976,7 +1010,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       const SizedBox(width: 6),
                       Text(
                         '4,100 ft from Sorya Bus Station',
-                        style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                        style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700, fontSize: 13),
                       ),
                     ],
                   ),
@@ -997,7 +1031,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ],
               ),
             ),
-            const Divider(height: 36, thickness: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 36, thickness: 1, color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
 
             // 6. Most Popular Facilities (Screenshot 4)
             Padding(
@@ -1005,9 +1039,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Most Popular Facilities',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 14),
                   Wrap(
@@ -1025,14 +1059,14 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     'See all facilities >',
-                    style: TextStyle(color: Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 36, thickness: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 36, thickness: 1, color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
 
             // 7. Description & Property Policies (Screenshot 5)
             Padding(
@@ -1040,32 +1074,81 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Description',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    widget.service.description.isNotEmpty
-                        ? widget.service.description
-                        : 'Located next to Kandal Market, this property offers premier luxury accommodations in the heart of the Riverside area. At the rooftop, it features 2 outdoor spa swimming pools as well as a panoramic sky restaurant and bar where guests can enjoy gourmet Khmer and international dining.',
-                    maxLines: _isDescriptionExpanded ? null : 3,
-                    overflow: _isDescriptionExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13.5, color: Color(0xFF334155), height: 1.45),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isDescriptionExpanded = !_isDescriptionExpanded;
-                      });
+                  Builder(
+                    builder: (context) {
+                      final rawDesc = widget.service.description.trim();
+                      final String descText;
+                      if (rawDesc.isNotEmpty && !rawDesc.startsWith('Spacious and luxury') && !rawDesc.startsWith('Comfortable room')) {
+                        descText = '$rawDesc Located next to Kandal Market, this property offers premier luxury accommodations in the heart of the Riverside area. At the rooftop, it features 2 outdoor spa swimming pools as well as a panoramic sky restaurant and bar where guests can enjoy gourmet Khmer and international dining. Each elegantly appointed room includes premium king bedding, high-speed fiber-optic WiFi, smart 4K flat-screen TV, minibar, espresso coffee station, and a private en-suite bathroom with hot rain shower and designer organic toiletries. Guests can enjoy complimentary international breakfast buffet daily, rejuvenate at the full-service wellness spa, or maintain fitness at our 24-hour gym. 24/7 concierge and tour booking services are available at your convenience.';
+                      } else {
+                        descText = 'Located next to Kandal Market, this property offers premier luxury accommodations in the heart of the Riverside area. At the rooftop, it features 2 outdoor spa swimming pools as well as a panoramic sky restaurant and bar where guests can enjoy gourmet Khmer and international dining. Each elegantly appointed room includes premium king bedding, high-speed fiber-optic WiFi, smart 4K flat-screen TV, minibar, espresso coffee station, and a private en-suite bathroom with hot rain shower and designer organic toiletries. Guests can enjoy complimentary international breakfast buffet daily, rejuvenate at the full-service wellness spa, or maintain fitness at our 24-hour gym. 24/7 concierge and tour booking services are available at your convenience.';
+                      }
+
+                      final textStyle = TextStyle(
+                        fontSize: 13.5,
+                        color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                        height: 1.45,
+                      );
+
+                      final bool isLongText = descText.length > 150;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _isDescriptionExpanded = !_isDescriptionExpanded;
+                              });
+                            },
+                            child: Text(
+                              descText,
+                              maxLines: _isDescriptionExpanded ? null : 4,
+                              overflow: _isDescriptionExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                              style: textStyle,
+                            ),
+                          ),
+                          if (isLongText) ...[
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _isDescriptionExpanded = !_isDescriptionExpanded;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _isDescriptionExpanded ? 'See less' : 'See more',
+                                      style: TextStyle(
+                                        color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      _isDescriptionExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                                      size: 18,
+                                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
                     },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Text(
-                        _isDescriptionExpanded ? 'Read less' : 'Read more',
-                        style: const TextStyle(color: Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -1082,7 +1165,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         ),
       ),
 
-      // 8. Sticky Bottom Booking Bar (Screenshots 1, 2, 3, 5)
+      // 8. Sticky Bottom Booking Bar (Pic 2: No price first, Free cancellation + Select rooms)
       bottomNavigationBar: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
@@ -1097,73 +1180,88 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           ],
         ),
         child: SafeArea(
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Free Cancellation + Price
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.restaurant_rounded, color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669), size: 15),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            widget.service.foodType.isNotEmpty
-                                ? widget.service.foodType
-                                : 'Breakfast included',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
+              // Free Cancellation Header & Live Inventory Badge
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check,
+                        color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Free cancellation',
+                        style: TextStyle(
+                          color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'US\$${widget.service.price.toStringAsFixed(0)} / night',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? const Color(0xFFFBBF24) : const Color(0xFF0F172A),
+                      ),
+                    ],
+                  ),
+                  if (widget.service.availableUnits <= 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'Sold Out',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
-                    Text(
-                      'You won\'t be charged yet',
-                      style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
-                    ),
-                  ],
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                "You won't be charged yet",
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                 ),
               ),
+              const SizedBox(height: 10),
 
-              // Blue "Select rooms" Button (matching screenshot)
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => BookingFormScreen(service: widget.service),
+              // Full-Width Blue "Select rooms" Button (Pic 2)
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RoomSelectionScreen(service: widget.service),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF006CE4), // Booking.com royal blue
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF006CE4), // Booking.com royal blue
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    elevation: 0,
                   ),
-                  elevation: 0,
-                ),
-                child: const Text(
-                  'Select rooms',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  child: const Text(
+                    'Select rooms',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1178,24 +1276,25 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     required String title,
     required String subtitle,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: 170,
       margin: const EdgeInsets.only(right: 10),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFFE0F2FE),
+              color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.5) : const Color(0xFFE0F2FE),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: const Color(0xFF0284C7), size: 20),
+            child: Icon(icon, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7), size: 20),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -1205,14 +1304,14 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
+                  style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600, fontSize: 10),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1225,6 +1324,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   }
 
   Widget _buildRatingBar(String label, double score) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final double percent = (score / 10.0).clamp(0.0, 1.0);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -1233,8 +1333,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
-              Text(score.toStringAsFixed(1), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              Text(label, style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155))),
+              Text(score.toStringAsFixed(1), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A))),
             ],
           ),
           const SizedBox(height: 4),
@@ -1242,8 +1342,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: percent,
-              backgroundColor: const Color(0xFFE2E8F0),
-              color: const Color(0xFF003580),
+              backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              color: isDark ? const Color(0xFF3B82F6) : const Color(0xFF003580),
               minHeight: 5,
             ),
           ),
@@ -1253,6 +1353,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   }
 
   Widget _buildSurroundingTab(String title, int index, IconData icon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = _selectedSurroundingTab == index;
     return GestureDetector(
       onTap: () {
@@ -1264,20 +1365,22 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF003580) : const Color(0xFFF1F5F9),
+          color: isSelected
+              ? (isDark ? const Color(0xFF2563EB) : const Color(0xFF003580))
+              : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: isSelected ? Colors.white : const Color(0xFF475569)),
+            Icon(icon, size: 14, color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569))),
             const SizedBox(width: 4),
             Text(
               title,
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.white : const Color(0xFF475569),
+                color: isSelected ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
               ),
             ),
           ],
@@ -1311,6 +1414,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   }
 
   Widget _buildSurroundingRow(String name, String distance, IconData icon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -1319,16 +1423,16 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           Expanded(
             child: Text(
               name,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B), fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B), fontWeight: FontWeight.w500),
             ),
           ),
           Row(
             children: [
-              Icon(icon, size: 14, color: const Color(0xFF64748B)),
+              Icon(icon, size: 14, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
               const SizedBox(width: 4),
               Text(
                 distance,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
               ),
             ],
           ),
@@ -1338,16 +1442,17 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   }
 
   Widget _buildFacilityItem(IconData icon, String title) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       width: (MediaQuery.of(context).size.width - 64) / 2,
       child: Row(
         children: [
-          Icon(icon, size: 17, color: const Color(0xFF0F172A)),
+          Icon(icon, size: 17, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0F172A)),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF334155)),
+              style: TextStyle(fontSize: 12.5, color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1358,19 +1463,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   }
 
   Widget _buildPolicyLink(String title, IconData trailingIcon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9))),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
           ),
-          Icon(trailingIcon, size: 18, color: const Color(0xFF64748B)),
+          Icon(trailingIcon, size: 18, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
         ],
       ),
     );
