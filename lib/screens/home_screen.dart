@@ -10,15 +10,17 @@ import '../services/theme_service.dart';
 import 'hotel_info_screen.dart';
 import 'notification_screen.dart';
 import 'service_detail_screen.dart';
+import '../widgets/stay_review_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
+  final ScrollController _scrollController = ScrollController();
   List<ServiceModel> allRooms = [];
   List<ServiceModel> services = [];
   List<CategoryModel> categories = [];
@@ -30,6 +32,32 @@ class _HomeScreenState extends State<HomeScreen> {
   String selectedRoomType = 'ALL';
   int selectedCategoryId = 0; // 0 = All
   final searchController = TextEditingController();
+  final FocusNode searchFocusNode = FocusNode();
+  bool showSuggestions = false;
+
+  // Booking.com style Rooms & Guests state (Pic 2 & Pic 3)
+  int selectedRooms = 1;
+  int selectedAdults = 2;
+  int selectedChildren = 0;
+  String selectedBedType = 'ALL';
+  int selectedRoomId = 0; // 0 = Any room
+  bool travelingForWork = false;
+  bool travelingWithPets = false;
+  bool isGuestFilterActive = false;
+
+  int get effectiveAdultRequirement {
+    final childEquiv = selectedChildren == 0 ? 0 : (selectedChildren + 1) ~/ 2;
+    return selectedAdults + childEquiv;
+  }
+
+  String get guestsSummaryText {
+    final roomText = '$selectedRooms ${selectedRooms > 1 ? 'rooms' : 'room'}';
+    final adultText = '$selectedAdults ${selectedAdults > 1 ? 'adults' : 'adult'}';
+    final childText = selectedChildren == 0
+        ? 'No children'
+        : (selectedChildren == 1 ? '1 child' : '$selectedChildren children');
+    return '$roomText · $adultText · $childText';
+  }
 
   final PageController _bannerController = PageController();
   int _currentBannerIndex = 0;
@@ -40,12 +68,54 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadAllData();
     _startBannerTimer();
+    searchFocusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          showSuggestions = searchFocusNode.hasFocus && searchController.text.trim().isNotEmpty;
+        });
+      }
+    });
+  }
+
+  List<ServiceModel> get searchSuggestions {
+    final q = searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return [];
+    return allRooms.where((r) =>
+      r.name.toLowerCase().contains(q) ||
+      r.roomType.toLowerCase().contains(q) ||
+      r.bedType.toLowerCase().contains(q) ||
+      r.categoryName.toLowerCase().contains(q)
+    ).take(6).toList();
   }
 
   List<ServiceModel> get newestRooms {
     final list = List<ServiceModel>.from(allRooms.isNotEmpty ? allRooms : services);
     list.sort((a, b) => b.id.compareTo(a.id));
     return list.take(5).toList();
+  }
+
+  void resetToHome() {
+    setState(() {
+      searchController.clear();
+      showSuggestions = false;
+      isGuestFilterActive = false;
+      selectedRooms = 1;
+      selectedAdults = 2;
+      selectedChildren = 0;
+      travelingForWork = false;
+      travelingWithPets = false;
+      selectedRoomType = 'ALL';
+      selectedCategoryId = 0;
+    });
+    searchFocusNode.unfocus();
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+    _applyFilter();
   }
 
   void _startBannerTimer() {
@@ -68,7 +138,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _bannerTimer?.cancel();
     _bannerController.dispose();
+    searchFocusNode.dispose();
     searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -91,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
         isLoading = false;
       });
       _applyFilter();
+      StayReviewDialog.checkAndShowPendingReview(context, delay: const Duration(milliseconds: 1000));
     }
   }
 
@@ -115,6 +188,16 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         list = list.where((r) => r.roomType.toUpperCase() == selectedRoomType.toUpperCase()).toList();
       }
+    }
+
+    // Dynamic Rooms & Guests Filter: 2 Children = 1 Adult
+    if (isGuestFilterActive) {
+      final childEquiv = selectedChildren == 0 ? 0 : (selectedChildren + 1) ~/ 2;
+      final neededCapacity = selectedAdults + childEquiv;
+
+      list = list.where((r) {
+        return r.maxGuests >= neededCapacity;
+      }).toList();
     }
 
     setState(() {
@@ -242,6 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: const Color(0xFFEAB308),
         onRefresh: _loadAllData,
         child: SingleChildScrollView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
@@ -265,14 +349,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: TextField(
                   controller: searchController,
+                  focusNode: searchFocusNode,
                   style: TextStyle(
                     color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
                     fontSize: 14,
                   ),
-                  onChanged: (_) => _applyFilter(),
-                  onSubmitted: (_) => _applyFilter(),
+                  onChanged: (text) {
+                    setState(() {
+                      showSuggestions = text.trim().isNotEmpty;
+                    });
+                    _applyFilter();
+                  },
+                  onSubmitted: (_) {
+                    setState(() {
+                      showSuggestions = false;
+                    });
+                    searchFocusNode.unfocus();
+                    _applyFilter();
+                  },
                   decoration: InputDecoration(
-                    hintText: 'Search hotel rooms, suites, or villas...',
+                    hintText: 'Search room name (e.g. Dog Room, Kitty Room)...',
                     hintStyle: TextStyle(
                       color: isDark ? const Color(0xFF64748B) : Colors.grey.shade400,
                       fontSize: 13,
@@ -287,6 +383,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             icon: Icon(Icons.clear, size: 18, color: isDark ? const Color(0xFF94A3B8) : Colors.grey),
                             onPressed: () {
                               searchController.clear();
+                              setState(() {
+                                showSuggestions = false;
+                              });
+                              searchFocusNode.unfocus();
                               _applyFilter();
                             },
                           )
@@ -296,255 +396,297 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
+              // Auto-Complete Suggestions Dropdown (Like Pic 3 / YouTube)
+              if (showSuggestions && searchSuggestions.isNotEmpty)
+                _buildSearchSuggestionsDropdown(isDark),
 
-              // Hotel Showcase & Live Details Card
-              _buildHotelHeaderCard(isDark),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
 
-              // Dynamic Hotel Room Banner Slideshow (Picture 2 style)
-              _buildBannerSlideshow(),
+              // Booking.com Style Rooms & Guests Search Card
+              _buildBookingComSearchCard(isDark),
 
-              // Hotel Room Categories Horizontal Selector
-              Text(
-                'Hotel Room Categories',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildCategoryPills(isDark),
-              const SizedBox(height: 24),
+              // Active search / filter condition
+              if (isGuestFilterActive || searchController.text.trim().isNotEmpty) ...[
+                // ACTIVE SEARCH MODE: Show Results IMMEDIATELY right below search card!
+                const SizedBox(height: 18),
 
-              // New & Featured Hotel Rooms Carousel (Top 4 to 5 Newest Rooms)
-              if (newestRooms.isNotEmpty) ...[
                 Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'New & Featured Rooms',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      searchController.text.trim().isNotEmpty
+                          ? 'Search Results for "${searchController.text.trim()}" (${services.length})'
+                          : 'Search Results (${services.length})',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${newestRooms.length} rooms',
-                    style: TextStyle(
-                      color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
-                      fontSize: 12,
+                    Text(
+                      '${services.length} available',
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                if (isLoading)
+                  const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: Color(0xFF006CE4))))
+                else if (services.isEmpty)
+                  _buildNoSearchResults(isDark)
+                else
+                  ...services.map((item) => _buildBookingStyleRoomCard(item, isDark)),
+              ] else ...[
+                // STANDARD HOMEPAGE MODE: Show Showcase, Slideshow, Categories, Featured & All Rooms
+                const SizedBox(height: 18),
+                _buildHotelHeaderCard(isDark),
+                const SizedBox(height: 18),
+                _buildBannerSlideshow(),
+
+                Text(
+                  'Hotel Room Categories',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 232,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: newestRooms.length,
-                  itemBuilder: (context, idx) {
-                    final item = newestRooms[idx];
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => ServiceDetailScreen(service: item)),
-                        );
-                      },
-                      child: Container(
-                        width: 260,
-                        margin: const EdgeInsets.only(right: 14),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF131D32) : Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF22314E) : Colors.grey.shade200,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Stack(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                                  child: item.imageUrl.trim().isNotEmpty
-                                      ? Image.network(
-                                          item.imageUrl,
-                                          height: 120,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => _buildNoPhotoWidget(isDark, 120),
-                                        )
-                                      : _buildNoPhotoWidget(isDark, 120),
-                                ),
-                                Positioned(
-                                  top: 10,
-                                  left: 10,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF2563EB),
-                                      borderRadius: BorderRadius.circular(6),
-                                      boxShadow: [
-                                        BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2)),
-                                      ],
-                                    ),
-                                    child: const Text(
-                                      'NEW',
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5),
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 10,
-                                  right: 10,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(color: const Color(0xFFEAB308), borderRadius: BorderRadius.circular(12)),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.star, size: 12, color: Color(0xFF0F172A)),
-                                        const SizedBox(width: 2),
-                                        Text('${item.rating}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF0F172A))),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (item.availableUnits <= 0)
-                                  Positioned(
-                                    bottom: 8,
-                                    left: 10,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFDC2626),
-                                        borderRadius: BorderRadius.circular(4),
-                                        boxShadow: [
-                                          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 3, offset: const Offset(0, 1)),
-                                        ],
-                                      ),
-                                      child: const Text(
-                                        'Sold Out',
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.5),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      _buildRoomTypeBadge(item.roomTypeDisplay, item.roomType, isDark),
-                                      const Spacer(),
-                                      Text(
-                                        '\$${item.price.toStringAsFixed(0)}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
-                                          color: isDark ? const Color(0xFFFBBF24) : const Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    item.cleanName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.location_on_outlined, size: 13, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        item.province,
-                                        style: TextStyle(
-                                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                ),
+                const SizedBox(height: 12),
+                _buildCategoryPills(isDark),
+                const SizedBox(height: 24),
+
+                if (newestRooms.isNotEmpty) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'New & Featured Rooms',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 28),
-              ],
-
-              // All Available Hotel Rooms List
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    selectedRoomType == 'ALL'
-                        ? 'All Available Hotel Rooms & Suites'
-                        : _getCategoryHeaderTitle(selectedRoomType),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
-                    ),
-                  ),
-                  Text(
-                    '${services.length} rooms',
-                    style: TextStyle(
-                      color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              if (isLoading)
-                const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: Color(0xFFEAB308))))
-              else if (services.isEmpty)
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      children: [
-                        Icon(Icons.bed_outlined, size: 48, color: isDark ? const Color(0xFF64748B) : Colors.grey.shade400),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No hotel rooms found for ${_getCategoryHeaderTitle(selectedRoomType)}.',
-                          style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey),
+                      Text(
+                        '${newestRooms.length} rooms',
+                        style: TextStyle(
+                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                          fontSize: 12,
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 232,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: newestRooms.length,
+                      itemBuilder: (context, idx) {
+                        final item = newestRooms[idx];
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => ServiceDetailScreen(service: item)),
+                            );
+                          },
+                          child: Container(
+                            width: 260,
+                            margin: const EdgeInsets.only(right: 14),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF131D32) : Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF22314E) : Colors.grey.shade200,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                                      child: item.imageUrl.trim().isNotEmpty
+                                          ? Image.network(
+                                              item.imageUrl,
+                                              height: 120,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, _, _) => _buildNoPhotoWidget(isDark, 120),
+                                            )
+                                          : _buildNoPhotoWidget(isDark, 120),
+                                    ),
+                                    Positioned(
+                                      top: 10,
+                                      left: 10,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF2563EB),
+                                          borderRadius: BorderRadius.circular(6),
+                                          boxShadow: [
+                                            BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2)),
+                                          ],
+                                        ),
+                                        child: const Text(
+                                          'NEW',
+                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 10,
+                                      right: 10,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(color: const Color(0xFFEAB308), borderRadius: BorderRadius.circular(12)),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.star, size: 12, color: Color(0xFF0F172A)),
+                                            const SizedBox(width: 2),
+                                            Text('${item.rating}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF0F172A))),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    if (item.availableUnits <= 0)
+                                      Positioned(
+                                        bottom: 8,
+                                        left: 10,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFDC2626),
+                                            borderRadius: BorderRadius.circular(4),
+                                            boxShadow: [
+                                              BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 3, offset: const Offset(0, 1)),
+                                            ],
+                                          ),
+                                          child: const Text(
+                                            'Sold Out',
+                                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.5),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          _buildRoomTypeBadge(item.roomTypeDisplay, item.roomType, isDark),
+                                          const Spacer(),
+                                          Text(
+                                            '\$${item.price.toStringAsFixed(0)}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                              color: isDark ? const Color(0xFFFBBF24) : const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        item.cleanName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.location_on_outlined, size: 13, color: Colors.grey),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            item.province,
+                                            style: TextStyle(
+                                              color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                )
-              else
-                ...services.map((item) => _buildBookingStyleRoomCard(item, isDark)),
+                  const SizedBox(height: 28),
+                ],
+
+                // All Available Hotel Rooms List
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      selectedRoomType == 'ALL'
+                          ? 'All Available Hotel Rooms & Suites'
+                          : _getCategoryHeaderTitle(selectedRoomType),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      '${services.length} rooms',
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                if (isLoading)
+                  const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: Color(0xFFEAB308))))
+                else if (services.isEmpty)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        children: [
+                          Icon(Icons.bed_outlined, size: 48, color: isDark ? const Color(0xFF64748B) : Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No hotel rooms found for ${_getCategoryHeaderTitle(selectedRoomType)}.',
+                            style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  ...services.map((item) => _buildBookingStyleRoomCard(item, isDark)),
+              ],
             ],
           ),
         ),
@@ -783,7 +925,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(width: 3),
                             Expanded(
                               child: Text(
-                                item.locationAddress.isNotEmpty && item.locationAddress != 'Phnom Penh, Cambodia'
+                                item.locationAddress.isNotEmpty
                                     ? item.locationAddress
                                     : (item.province.isNotEmpty ? '${item.province} · In downtown' : 'In downtown'),
                                 maxLines: 1,
@@ -874,7 +1016,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHotelHeaderCard(bool isDark) {
     final hName = hotel?.name.isNotEmpty == true ? hotel!.name : 'Boss_Heng Luxury Hotel';
     final hTagline = hotel?.tagline.isNotEmpty == true ? hotel!.tagline : 'Premier 5-Star Riverside Retreat & Suites';
-    final hAddress = hotel?.address.isNotEmpty == true ? hotel!.address : 'Riverside Blvd, Daun Penh, Phnom Penh';
+    final hAddress = hotel?.address.isNotEmpty == true ? hotel!.address : 'National Road 2, Ta Khmau, Kandal';
     final hStars = hotel?.starRating ?? 5;
 
     return Container(
@@ -1481,4 +1623,653 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // ==========================================================================
+  // BOOKING.COM STYLE SEARCH CARD & ROOMS/GUESTS SELECTOR (Pic 2 & Pic 3)
+  // ==========================================================================
+
+  Widget _buildBookingComSearchCard(bool isDark) {
+    final roomText = '$selectedRooms ${selectedRooms > 1 ? "rooms" : "room"}';
+    final adultText = '$selectedAdults ${selectedAdults > 1 ? "adults" : "adult"}';
+    final childText = selectedChildren == 0
+        ? 'No children'
+        : (selectedChildren == 1 ? '1 child' : '$selectedChildren children');
+    final mainSummary = '$roomText · $adultText · $childText';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131D32) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFF59E0B), // Golden yellow border from Pic 2
+          width: 2.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.22 : 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Selector Row
+          InkWell(
+            onTap: () => _openRoomsAndGuestsBottomSheet(isDark),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.person_outline_rounded,
+                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                    size: 26,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mainSummary,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          isGuestFilterActive ? 'Filter active · Tap to change' : 'Tap to select rooms and guests',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                    size: 24,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Divider
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: isDark ? const Color(0xFF22314E) : const Color(0xFFE2E8F0),
+          ),
+
+          // Search Button (Solid blue like Pic 2)
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: () async {
+                setState(() {
+                  isGuestFilterActive = true;
+                  isLoading = true;
+                });
+                final fresh = await ApiService.getServices();
+                if (mounted) {
+                  setState(() {
+                    allRooms = fresh;
+                    isLoading = false;
+                  });
+                  _applyFilter();
+                }
+                },
+
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF006CE4), // Signature Booking.com Blue
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(13)),
+                ),
+              ),
+              child: const Text(
+                'Search',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openRoomsAndGuestsBottomSheet(bool isDark) {
+    int tempRooms = selectedRooms;
+    int tempAdults = selectedAdults;
+    int tempChildren = selectedChildren;
+    bool tempWork = travelingForWork;
+    bool tempPets = travelingWithPets;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131D32) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black45, blurRadius: 20, offset: Offset(0, -4)),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Drag Handle
+                      Container(
+                        margin: const EdgeInsets.only(top: 12, bottom: 8),
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF334155) : Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Select rooms and guests',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      Divider(height: 1, color: isDark ? const Color(0xFF22314E) : const Color(0xFFE2E8F0)),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        child: Column(
+                          children: [
+                            // Rooms Counter
+                            _buildCounterRow(
+                              title: 'Rooms',
+                              subtitle: null,
+                              value: tempRooms,
+                              minValue: 1,
+                              maxValue: 10,
+                              isDark: isDark,
+                              onDecrement: () => setModalState(() => tempRooms--),
+                              onIncrement: () => setModalState(() => tempRooms++),
+                            ),
+                            const SizedBox(height: 18),
+
+                            // Adults Counter
+                            _buildCounterRow(
+                              title: 'Adults',
+                              subtitle: '18+ years old',
+                              value: tempAdults,
+                              minValue: 1,
+                              maxValue: 20,
+                              isDark: isDark,
+                              onDecrement: () => setModalState(() => tempAdults--),
+                              onIncrement: () => setModalState(() => tempAdults++),
+                            ),
+                            const SizedBox(height: 18),
+
+                            // Children Counter
+                            _buildCounterRow(
+                              title: 'Children',
+                              subtitle: '0 – 17 years (2 children = 1 adult capacity)',
+                              value: tempChildren,
+                              minValue: 0,
+                              maxValue: 10,
+                              isDark: isDark,
+                              onDecrement: () => setModalState(() => tempChildren--),
+                              onIncrement: () => setModalState(() => tempChildren++),
+                            ),
+                            const SizedBox(height: 18),
+
+                            // Traveling for work?
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Traveling for work?',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value: tempWork,
+                                  activeTrackColor: const Color(0xFF006CE4),
+                                  activeThumbColor: Colors.white,
+                                  onChanged: (val) => setModalState(() => tempWork = val),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Traveling with pets?
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Traveling with pets?',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value: tempPets,
+                                  activeTrackColor: const Color(0xFF006CE4),
+                                  activeThumbColor: Colors.white,
+                                  onChanged: (val) => setModalState(() => tempPets = val),
+                                ),
+                              ],
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                "Assistance animals aren't considered pets.",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? const Color(0xFF64748B) : Colors.grey.shade500,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Bottom Apply Button
+                            SizedBox(
+                              width: double.infinity,
+                              height: 50,
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  setState(() {
+                                    selectedRooms = tempRooms;
+                                    selectedAdults = tempAdults;
+                                    selectedChildren = tempChildren;
+                                    travelingForWork = tempWork;
+                                    travelingWithPets = tempPets;
+                                    isGuestFilterActive = true;
+                                    isLoading = true;
+                                  });
+                                  Navigator.pop(ctx);
+                                  final fresh = await ApiService.getServices();
+                                  if (mounted) {
+                                    setState(() {
+                                      allRooms = fresh;
+                                      isLoading = false;
+                                    });
+                                    _applyFilter();
+                                  }
+                                  },
+
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF006CE4),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: const Text(
+                                  'Apply',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCounterRow({
+    required String title,
+    String? subtitle,
+    required int value,
+    required int minValue,
+    required int maxValue,
+    required bool isDark,
+    required VoidCallback onDecrement,
+    required VoidCallback onIncrement,
+  }) {
+    final canDec = value > minValue;
+    final canInc = value < maxValue;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ],
+        ),
+        Row(
+          children: [
+            // Minus Button
+            InkWell(
+              onTap: canDec ? onDecrement : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: canDec
+                        ? const Color(0xFF006CE4)
+                        : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                    width: 1.2,
+                  ),
+                ),
+                child: Icon(
+                  Icons.remove,
+                  size: 18,
+                  color: canDec
+                      ? (isDark ? Colors.white : const Color(0xFF006CE4))
+                      : (isDark ? const Color(0xFF475569) : Colors.grey.shade400),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '$value',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                ),
+              ),
+            ),
+            // Plus Button
+            InkWell(
+              onTap: canInc ? onIncrement : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: canInc
+                        ? const Color(0xFF006CE4)
+                        : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                    width: 1.2,
+                  ),
+                ),
+                child: Icon(
+                  Icons.add,
+                  size: 18,
+                  color: canInc
+                      ? (isDark ? Colors.white : const Color(0xFF006CE4))
+                      : (isDark ? const Color(0xFF475569) : Colors.grey.shade400),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+  Widget _buildSearchSuggestionsDropdown(bool isDark) {
+    final suggestions = searchSuggestions;
+    if (suggestions.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 6, bottom: 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 180),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.lightbulb_outline, size: 16, color: const Color(0xFFF59E0B)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'ROOM SUGGESTIONS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        showSuggestions = false;
+                        searchFocusNode.unfocus();
+                      });
+                    },
+                    child: Icon(Icons.close, size: 18, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: suggestions.length,
+                separatorBuilder: (_, _) => Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: isDark ? const Color(0xFF334155).withValues(alpha: 0.5) : const Color(0xFFF1F5F9),
+                ),
+                itemBuilder: (context, idx) {
+                  final room = suggestions[idx];
+                  return InkWell(
+                    onTap: () {
+                      searchController.text = room.name;
+                      setState(() {
+                        showSuggestions = false;
+                        searchFocusNode.unfocus();
+                      });
+                      _applyFilter();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.search_rounded,
+                            size: 18,
+                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF006CE4),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  room.name,
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${room.bedType} · Sleeps ${room.maxGuests} · \$${room.price.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.north_west_rounded,
+                            size: 15,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoSearchResults(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 40,
+                color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade500,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'No matching rooms found',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              searchController.text.isNotEmpty
+                  ? 'No room found matching "${searchController.text}". Try another room name.'
+                  : 'No room can accommodate ${selectedAdults + selectedChildren} guest(s). Try adjusting your guest count or adding higher capacity rooms in the dashboard.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  searchController.clear();
+                  showSuggestions = false;
+                  isGuestFilterActive = false;
+                  selectedRooms = 1;
+                  selectedAdults = 2;
+                  selectedChildren = 0;
+                  selectedRoomType = 'ALL';
+                });
+                _applyFilter();
+              },
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Reset & View All Rooms'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF006CE4),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }

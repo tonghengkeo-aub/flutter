@@ -59,13 +59,25 @@ class ApiService {
   }) =>
       AuthService.register(fullName, phone, email, password, gender: gender, address: address);
 
-  static Future<void> updateProfile({
+  static Future<UserModel> updateProfile({
     required String fullName,
     String? phone,
     String? gender,
     String? address,
+    String? avatarUrl,
   }) =>
-      AuthService.updateProfile(fullName: fullName, phone: phone, gender: gender, address: address);
+      AuthService.updateProfile(
+        fullName: fullName,
+        phone: phone,
+        gender: gender,
+        address: address,
+        avatarUrl: avatarUrl,
+      );
+
+  static Future<UserModel?> refreshProfile() => AuthService.refreshProfile();
+
+  static Future<UserModel> uploadAvatarFile(Uint8List fileBytes, String filename) =>
+      AuthService.uploadAvatarFile(fileBytes, filename);
 
   static Future<void> changePassword(String oldPassword, String newPassword) =>
       AuthService.changePassword(oldPassword, newPassword);
@@ -229,4 +241,10 @@ class ApiService {
 
   static Future<void> markAllNotificationsRead() =>
       NotificationService.markAllNotificationsRead();
+
+  static Future<bool> deleteNotification(int id) =>
+      NotificationService.deleteNotification(id);
+
+  static Future<bool> clearAllNotifications() =>
+      NotificationService.clearAllNotifications();
 }

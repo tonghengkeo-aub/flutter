@@ -43,7 +43,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
           children: [
@@ -53,19 +53,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'BOOKING PRO',
-                    style: TextStyle(
-                      color: Color(0xFFEAB308),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
+                  const SizedBox(),
                   if (_currentPage < _pages.length - 1)
                     TextButton(
                       onPressed: _finishOnboarding,
-                      child: const Text('Skip', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      child: const Text('Skip', style: TextStyle(color: Color(0xFF64748B), fontSize: 14, fontWeight: FontWeight.w600)),
                     )
                   else
                     const SizedBox(height: 36),
@@ -107,7 +99,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: Color(0xFF0F172A),
                             letterSpacing: -0.4,
                           ),
                         ),
@@ -118,7 +110,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           style: const TextStyle(
                             fontSize: 14,
                             height: 1.5,
-                            color: Colors.white60,
+                            color: Color(0xFF64748B),
                           ),
                         ),
                       ],
@@ -143,7 +135,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         width: _currentPage == idx ? 28 : 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: _currentPage == idx ? const Color(0xFFEAB308) : Colors.white24,
+                          color: _currentPage == idx ? const Color(0xFFEAB308) : const Color(0xFFCBD5E1),
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
@@ -167,7 +159,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFEAB308),
                         foregroundColor: const Color(0xFF0F172A),
-                        elevation: 4,
+                        elevation: 2,
+                        shadowColor: const Color(0xFFEAB308).withValues(alpha: 0.4),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       child: Text(

@@ -172,15 +172,16 @@ class AuthService {
     }
   }
 
-  static Future<void> updateProfile({
+  static Future<UserModel> updateProfile({
     required String fullName,
     String? phone,
     String? gender,
     String? address,
+    String? avatarUrl,
   }) async {
     if (authToken != null) {
       try {
-        await http.put(
+        final res = await http.put(
           Uri.parse('${ApiClient.baseUrl}/users/profile'),
           headers: ApiClient.defaultHeaders(),
           body: jsonEncode({
@@ -188,21 +189,99 @@ class AuthService {
             'phone': phone,
             'gender': gender,
             'address': address,
+            'avatarUrl': avatarUrl,
           }),
-        ).timeout(const Duration(seconds: 3));
-      } catch (_) {}
+        ).timeout(const Duration(seconds: 4));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(res.bodyBytes));
+          currentUser = UserModel.fromJson({
+            ...data,
+            'token': authToken,
+          });
+          await saveSession(currentUser!, authToken!);
+          return currentUser!;
+        }
+      } catch (e) {
+        debugPrint('Error updating profile on server: $e');
+      }
     }
 
     if (currentUser != null) {
-      currentUser = UserModel(
-        id: currentUser!.id,
+      currentUser = currentUser!.copyWith(
         fullName: fullName,
-        email: currentUser!.email,
         phone: phone ?? currentUser!.phone,
-        role: currentUser!.role,
-        token: currentUser!.token,
+        gender: gender ?? currentUser!.gender,
+        address: address ?? currentUser!.address,
+        avatarUrl: avatarUrl ?? currentUser!.avatarUrl,
       );
+      if (authToken != null) {
+        await saveSession(currentUser!, authToken!);
+      }
     }
+    return currentUser!;
+  }
+
+  static Future<UserModel?> refreshProfile() async {
+    if (authToken == null) return null;
+    try {
+      final res = await http.get(
+        Uri.parse('${ApiClient.baseUrl}/users/profile'),
+        headers: ApiClient.defaultHeaders(),
+      ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        currentUser = UserModel.fromJson({
+          ...data,
+          'token': authToken,
+        });
+        await saveSession(currentUser!, authToken!);
+        return currentUser;
+      }
+    } catch (e) {
+      debugPrint('Error refreshing profile: $e');
+    }
+    return currentUser;
+  }
+
+  static Future<UserModel> uploadAvatarFile(Uint8List fileBytes, String filename) async {
+    if (authToken != null) {
+      try {
+        final uri = Uri.parse('${ApiClient.baseUrl}/users/avatar/upload');
+        final request = http.MultipartRequest('POST', uri);
+        request.headers['Authorization'] = 'Bearer $authToken';
+        request.files.add(http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: filename,
+        ));
+        final streamed = await request.send().timeout(const Duration(seconds: 10));
+        final res = await http.Response.fromStream(streamed);
+        if (res.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(res.bodyBytes));
+          final rawUrl = data['avatarUrl'] as String;
+          final host = ApiClient.baseUrl.replaceAll('/api', '');
+          final fullUrl = rawUrl.startsWith('http') ? rawUrl : '$host$rawUrl';
+
+          if (currentUser != null) {
+            currentUser = currentUser!.copyWith(avatarUrl: fullUrl);
+            await saveSession(currentUser!, authToken!);
+          }
+          await refreshProfile();
+          return currentUser!;
+        }
+      } catch (e) {
+        debugPrint('Multipart upload failed, falling back to base64: $e');
+      }
+    }
+
+    // Fallback: save base64 data url directly
+    final base64String = 'data:image/jpeg;base64,${base64Encode(fileBytes)}';
+    return await updateProfile(
+      fullName: currentUser?.fullName ?? '',
+      avatarUrl: base64String,
+    );
   }
 
   static Future<void> changePassword(String oldPassword, String newPassword) async {
@@ -214,12 +293,18 @@ class AuthService {
           'oldPassword': oldPassword,
           'newPassword': newPassword,
         }),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 4));
 
       if (res.statusCode != 200) {
-        final err = jsonDecode(utf8.decode(res.bodyBytes));
-        throw Exception(err['message'] ?? 'Password update failed');
+        String msg = 'Password update failed';
+        try {
+          final err = jsonDecode(utf8.decode(res.bodyBytes));
+          if (err['message'] != null) msg = err['message'];
+        } catch (_) {}
+        throw Exception(msg);
       }
+    } else {
+      throw Exception('Authentication required to change password.');
     }
   }
 }

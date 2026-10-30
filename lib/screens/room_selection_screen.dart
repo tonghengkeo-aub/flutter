@@ -138,36 +138,77 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
       if (widget.initialRoom != null) {
         targetRooms = [widget.initialRoom!];
       } else if (backendRooms.isNotEmpty) {
-        targetRooms = backendRooms.where((r) => r.status == 'AVAILABLE').toList();
+        targetRooms = backendRooms.where((r) => r.status == 'AVAILABLE' || (r.availableUnits > 0 && r.status != 'MAINTENANCE' && r.status != 'CLEANING')).toList();
       }
     }
 
-    // 2. Map EACH real room from database to 1 option card (No artificial duplicates!)
+    // 2. Group rooms by tier (STANDARD, DELUXE, PREMIUM) so we never show confusing duplicates!
+    // If the hotel has multiple physical rooms of the same tier (e.g. 2 or 3 Standard rooms),
+    // we combine their available units so the customer sees "2 or 3 rooms left" as expected!
+    final int? targetRoomId = widget.initialRoom?.id ?? widget.service?.id;
+
+    List<RoomModel> sortedRooms = List.from(targetRooms);
+    if (targetRoomId != null) {
+      sortedRooms.sort((a, b) {
+        if (a.id == targetRoomId) return -1;
+        if (b.id == targetRoomId) return 1;
+        return b.id.compareTo(a.id);
+      });
+    } else {
+      sortedRooms.sort((a, b) => b.id.compareTo(a.id));
+    }
+
+    final Map<String, RoomModel> tierMap = {};
+    final Map<String, int> tierUnits = {};
+
+    for (final room in sortedRooms) {
+      final tier = room.roomTier.toUpperCase();
+      if (!tierMap.containsKey(tier)) {
+        tierMap[tier] = room;
+        tierUnits[tier] = room.availableUnits > 0 ? room.availableUnits : 1;
+      } else {
+        // Accumulate units from additional physical rooms of this tier
+        tierUnits[tier] = (tierUnits[tier] ?? 1) + (room.availableUnits > 0 ? room.availableUnits : 1);
+      }
+    }
+
+    // Desired tier display order: STANDARD -> DELUXE -> PREMIUM
+    final tierOrder = ['STANDARD', 'DELUXE', 'PREMIUM'];
+    List<RoomModel> distinctRooms = [];
+    for (final t in tierOrder) {
+      if (tierMap.containsKey(t)) distinctRooms.add(tierMap[t]!);
+    }
+    for (final entry in tierMap.entries) {
+      if (!tierOrder.contains(entry.key)) distinctRooms.add(entry.value);
+    }
+
     List<RoomOptionItem> items = [];
 
-    for (final room in targetRooms) {
+    for (final room in distinctRooms) {
+      final tierKey = room.roomTier.toUpperCase();
+      final totalAvail = tierUnits[tierKey] ?? room.availableUnits;
       final double price = room.priceUsd > 0 ? room.priceUsd : 30.0;
       final double orig = (price * 1.35).roundToDouble();
       final int diff = (orig - price).round();
 
-      String tierTitle = room.roomTier.toUpperCase() == 'DELUXE'
+      String tierTitle = tierKey == 'DELUXE'
           ? 'Deluxe Room'
-          : (room.roomTier.toUpperCase() == 'PREMIUM' ? 'Premium Room' : 'Standard Room');
+          : (tierKey == 'PREMIUM' ? 'Premium Room' : 'Standard Room');
 
       // Use the actual custom name created in dashboard (e.g. "Sweet Room")
       String displayName = (room.name != null && room.name!.trim().isNotEmpty)
           ? room.name!.trim()
           : '$tierTitle • ${room.type} (Room ${room.roomNumber})';
 
-      String badge = room.roomTier.toUpperCase() == 'DELUXE'
+      String badge = tierKey == 'DELUXE'
           ? 'Popular Choice • Deluxe Comfort'
-          : (room.roomTier.toUpperCase() == 'PREMIUM' ? 'VIP All-Inclusive' : 'Standard Comfort • Best Value');
+          : (tierKey == 'PREMIUM' ? 'VIP All-Inclusive' : 'Standard Comfort • Best Value');
 
       String desc = room.description.trim().isNotEmpty
           ? room.description.trim()
-          : (room.roomTier.toUpperCase() == 'DELUXE'
+          : (tierKey == 'DELUXE'
               ? (room.deluxeInfo != null && room.deluxeInfo!.isNotEmpty ? room.deluxeInfo! : 'Deluxe room with Air Conditioning (AC), Balcony & Flat-screen TV.')
-              : (room.roomTier.toUpperCase() == 'PREMIUM'
+              : (tierKey == 'PREMIUM'
                   ? (room.premiumInfo != null && room.premiumInfo!.isNotEmpty ? room.premiumInfo! : 'Executive VIP room with AC, Free Breakfast included & VIP perks.')
                   : (room.standardInfo != null && room.standardInfo!.isNotEmpty ? room.standardInfo! : 'Standard room with essential amenities at original base price.')));
 
@@ -190,7 +231,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
           sizeFt: room.roomSize.isNotEmpty ? room.roomSize.replaceAll('ft²', 'm²') : '28 m²',
           currentPrice: price,
           originalPrice: orig,
-          availableUnits: room.availableUnits > 0 ? room.availableUnits : 1,
+          availableUnits: totalAvail > 0 ? totalAvail : 1,
           discountTag: badge,
           discountOffTag: 'US\$$diff off',
           amenities: amenitiesList,
@@ -198,7 +239,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
           thumbnail: room.firstImageUrl,
           hasFreeCancellation: room.freeCancellation,
           noPrepayment: room.noPrepayment,
-          includesBreakfast: room.roomTier.toUpperCase() == 'PREMIUM' || room.includesBreakfast,
+          includesBreakfast: tierKey == 'PREMIUM' || room.includesBreakfast,
           includesMassage: room.includesMassage,
         ),
       );
@@ -611,6 +652,86 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
     }
   }
 
+  IconData _getRoomTypeIcon(String? type) {
+    switch (type?.toUpperCase()) {
+      case 'SINGLE':
+        return Icons.single_bed_rounded;
+      case 'DOUBLE':
+        return Icons.king_bed_rounded;
+      case 'TWIN':
+        return Icons.bed_rounded;
+      case 'TRIPLE':
+        return Icons.bedroom_parent_rounded;
+      case 'FAMILY':
+        return Icons.family_restroom_rounded;
+      case 'SUITE':
+      case 'VIP':
+        return Icons.meeting_room_rounded;
+      default:
+        return Icons.hotel_rounded;
+    }
+  }
+
+  Widget _buildTierBadge(String? tier, bool isDark) {
+    final upper = (tier ?? 'STANDARD').toUpperCase();
+    Color bg;
+    Color border;
+    Color fg;
+    IconData icon;
+    String label;
+
+    switch (upper) {
+      case 'DELUXE':
+        bg = isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF);
+        border = isDark ? const Color(0xFF3B82F6) : const Color(0xFF93C5FD);
+        fg = isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
+        icon = Icons.hotel_class_rounded;
+        label = 'Deluxe Room';
+        break;
+      case 'PREMIUM':
+      case 'VIP':
+        bg = isDark ? const Color(0xFF4C1D95).withValues(alpha: 0.35) : const Color(0xFFFAF5FF);
+        border = isDark ? const Color(0xFFA855F7) : const Color(0xFFD8B4FE);
+        fg = isDark ? const Color(0xFFD8B4FE) : const Color(0xFF7E22CE);
+        icon = Icons.diamond_rounded;
+        label = 'Premium Room';
+        break;
+      case 'STANDARD':
+      default:
+        bg = isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFECFDF5);
+        border = isDark ? const Color(0xFF10B981) : const Color(0xFFA7F3D0);
+        fg = isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857);
+        icon = Icons.task_alt_rounded;
+        label = 'Standard Room';
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRoomCard(RoomOptionItem item, bool isSelected, bool isDark) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -641,7 +762,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Room Type Tag (Pic 2: e.g. [ 🛏️ Single Room ])
+                      // Room Type & Room Tier Tags (Pic 1/2/3: e.g. [ 🛏️ Single Room ] [ 🌿 Standard Room ])
                       Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 8,
@@ -662,7 +783,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.hotel_rounded,
+                                  _getRoomTypeIcon(item.room.type),
                                   size: 13,
                                   color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                                 ),
@@ -678,6 +799,8 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
                               ],
                             ),
                           ),
+                          // Prominent Room Tier Tag
+                          _buildTierBadge(item.room.roomTier, isDark),
                           if (isSelected)
                             Container(
                               margin: const EdgeInsets.only(bottom: 6),
@@ -729,7 +852,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
                       // Specs: Sleeps, Bed, Size
                       Row(
                         children: [
-                          Icon(Icons.person_outline, size: 15, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                          Icon(Icons.people_alt_rounded, size: 15, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                           const SizedBox(width: 4),
                           Text(
                             'Sleeps ${item.maxAdults} adults',
@@ -761,7 +884,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.crop_square_outlined, size: 15, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                          Icon(Icons.square_foot_rounded, size: 15, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                           const SizedBox(width: 4),
                           Text(
                             'Room size: ${item.sizeFt}',
@@ -975,7 +1098,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            item.availableUnits > 0 ? Icons.inventory_2_outlined : Icons.block,
+                            item.availableUnits > 0 ? Icons.door_front_door_outlined : Icons.block,
                             size: 13,
                             color: item.availableUnits > 0 ? const Color(0xFF059669) : const Color(0xFFDC2626),
                           ),

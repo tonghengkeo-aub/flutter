@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/hotel_model.dart';
 import '../services/room_service.dart';
+import '../widgets/interactive_hotel_map.dart';
 
 class HotelInfoScreen extends StatefulWidget {
   final HotelModel? hotel;
@@ -70,8 +71,8 @@ class _HotelInfoScreenState extends State<HotelInfoScreen> {
                 id: 1,
                 name: 'Boss_Heng Luxury Hotel',
                 description: 'Experience five-star luxury with riverside views and world-class Khmer hospitality.',
-                address: 'Riverside Blvd, Daun Penh, Phnom Penh',
-                province: 'Phnom Penh',
+                address: 'National Road 2, Ta Khmau, Kandal',
+                province: 'Kandal',
                 phone: '023888999',
                 email: 'info@bosshenghotel.com',
                 rating: 4.9,
@@ -351,53 +352,11 @@ class _HotelInfoScreenState extends State<HotelInfoScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(Icons.location_on, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF003580), size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        hotel.address,
-                                        style: TextStyle(color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w600),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${hotel.province}, Cambodia',
-                                        style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            InkWell(
-                              onTap: () => _openUrl(hotel.mapUrl),
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFBFDBFE)),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.map_outlined, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8), size: 16),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Open in Google Maps ↗',
-                                      style: TextStyle(color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8), fontWeight: FontWeight.bold, fontSize: 12.5),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            InteractiveHotelMap(
+                              mapUrl: hotel.mapUrl,
+                              hotelName: hotel.name,
+                              locationAddress: '${hotel.address}, ${hotel.province}',
+                              height: 190,
                             ),
                           ],
                         ),

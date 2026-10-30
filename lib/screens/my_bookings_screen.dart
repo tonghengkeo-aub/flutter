@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/booking_model.dart';
 import '../services/api_service.dart';
+import '../widgets/stay_review_dialog.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   final bool fromBookingSuccess;
@@ -11,16 +12,19 @@ class MyBookingsScreen extends StatefulWidget {
   State<MyBookingsScreen> createState() => _MyBookingsScreenState();
 }
 
+enum BookingTabType { upcoming, completed, cancelled }
+
 class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<BookingModel> upcomingBookings = [];
-  List<BookingModel> historyBookings = [];
+  List<BookingModel> completedBookings = [];
+  List<BookingModel> cancelledBookings = [];
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadBookings();
   }
 
@@ -32,13 +36,24 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
 
   Future<void> _loadBookings() async {
     setState(() => isLoading = true);
-    final upcomings = await ApiService.getUpcomingBookings();
-    final histories = await ApiService.getHistoryBookings();
+    final all = await ApiService.getMyBookings();
 
     if (mounted) {
       setState(() {
-        upcomingBookings = upcomings;
-        historyBookings = histories;
+        upcomingBookings = all.where((b) =>
+            b.status != 'CANCELLED' &&
+            b.status != 'REJECTED' &&
+            (b.status == 'CONFIRMED' ||
+             b.status == 'CHECKED_IN' ||
+             b.status == 'RESCHEDULED' ||
+             (b.status == 'PENDING' && b.paymentStatus == 'PAID'))).toList();
+        completedBookings = all.where((b) =>
+            b.status == 'COMPLETED' ||
+            b.status == 'CHECKED_OUT').toList();
+        cancelledBookings = all.where((b) =>
+            b.status == 'CANCELLED' ||
+            b.status == 'REJECTED' ||
+            b.status == 'NO_SHOW').toList();
         isLoading = false;
       });
     }
@@ -351,10 +366,11 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
           unselectedLabelColor: isDark ? const Color(0xFF64748B) : Colors.grey,
           indicatorColor: const Color(0xFFEAB308),
           indicatorWeight: 3,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           tabs: [
             Tab(text: 'Upcoming (${upcomingBookings.length})'),
-            Tab(text: 'History (${historyBookings.length})'),
+            Tab(text: 'Completed (${completedBookings.length})'),
+            Tab(text: 'Cancelled (${cancelledBookings.length})'),
           ],
         ),
       ),
@@ -363,30 +379,45 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildBookingList(upcomingBookings, isUpcoming: true),
-                _buildBookingList(historyBookings, isUpcoming: false),
+                _buildBookingList(upcomingBookings, listType: BookingTabType.upcoming),
+                _buildBookingList(completedBookings, listType: BookingTabType.completed),
+                _buildBookingList(cancelledBookings, listType: BookingTabType.cancelled),
               ],
             ),
     );
   }
 
-  Widget _buildBookingList(List<BookingModel> list, {required bool isUpcoming}) {
+  Widget _buildBookingList(List<BookingModel> list, {required BookingTabType listType}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (list.isEmpty) {
+      IconData emptyIcon = Icons.hotel_outlined;
+      String emptyTitle = 'No upcoming hotel bookings';
+      String emptySubtitle = 'Browse available rooms to plan your next stay.';
+
+      if (listType == BookingTabType.completed) {
+        emptyIcon = Icons.history_rounded;
+        emptyTitle = 'No completed stays yet';
+        emptySubtitle = 'Your past completed stays and checked-out rooms will appear here.';
+      } else if (listType == BookingTabType.cancelled) {
+        emptyIcon = Icons.event_busy_rounded;
+        emptyTitle = 'No cancelled reservations';
+        emptySubtitle = 'You have no cancelled hotel stays.';
+      }
+
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.hotel_outlined, size: 64, color: isDark ? const Color(0xFF334155) : Colors.grey.shade300),
+            Icon(emptyIcon, size: 64, color: isDark ? const Color(0xFF334155) : Colors.grey.shade300),
             const SizedBox(height: 16),
             Text(
-              isUpcoming ? 'No upcoming hotel bookings' : 'No past reservations found',
+              emptyTitle,
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFF94A3B8) : Colors.grey),
             ),
             const SizedBox(height: 6),
             Text(
-              'Browse available rooms to plan your next stay.',
+              emptySubtitle,
               style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFF64748B) : Colors.grey),
             ),
           ],
@@ -458,22 +489,22 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
                         borderRadius: BorderRadius.circular(12),
                         child: b.imageUrl.trim().isNotEmpty
                             ? Image.network(
-                                b.imageUrl,
-                                width: 78,
-                                height: 78,
+                                RoomService.safeWebUrl(b.imageUrl),
+                                width: 80,
+                                height: 80,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, _, _) => Container(
-                                  width: 78,
-                                  height: 78,
+                                  width: 80,
+                                  height: 80,
                                   color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                                  child: Icon(Icons.bed_outlined, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 28),
+                                  child: Icon(Icons.hotel_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 30),
                                 ),
                               )
                             : Container(
-                                width: 78,
-                                height: 78,
+                                width: 80,
+                                height: 80,
                                 color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                                child: Icon(Icons.bed_outlined, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 28),
+                                child: Icon(Icons.hotel_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), size: 30),
                               ),
                       ),
                       const SizedBox(width: 14),
@@ -563,16 +594,17 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
                           ),
                         ],
                       ),
-                      if (isUpcoming && b.status != 'CANCELLED')
+                      if (listType == BookingTabType.upcoming && b.status != 'CANCELLED')
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             if (b.status != 'CHECKED_IN') ...[
                               OutlinedButton(
                                 onPressed: () => _showCancelDialog(b),
                                 style: OutlinedButton.styleFrom(
                                   side: const BorderSide(color: Colors.redAccent),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                                 child: const Text('Cancel', style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold)),
                               ),
@@ -585,23 +617,93 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: b.status == 'CHECKED_IN' ? const Color(0xFF10B981) : const Color(0xFFEAB308),
                                 foregroundColor: b.status == 'CHECKED_IN' ? Colors.white : const Color(0xFF0F172A),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
                             ),
                           ],
                         )
-                      else
-                        ElevatedButton.icon(
+                      else if (listType == BookingTabType.cancelled)
+                        OutlinedButton.icon(
                           onPressed: () => _showQrPass(b),
-                          icon: const Icon(Icons.qr_code, size: 14),
-                          label: const Text('View Pass', style: TextStyle(fontSize: 11)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isDark ? const Color(0xFF2563EB) : const Color(0xFF0F172A),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          icon: Icon(
+                            Icons.receipt_long_outlined,
+                            size: 14,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
                           ),
+                          label: Text(
+                            'View Details',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            side: BorderSide(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                              width: 1.2,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        )
+                      else
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _showQrPass(b),
+                              icon: Icon(
+                                Icons.confirmation_number_outlined,
+                                size: 14,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                              ),
+                              label: Text(
+                                'View Pass',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                side: BorderSide(
+                                  color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                  width: 1.2,
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                            if (b.status == 'COMPLETED' || b.status == 'CHECKED_OUT') ...[
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () => StayReviewDialog.show(
+                                  context,
+                                  b,
+                                  onReviewed: () {
+                                    if (mounted) _loadBookings();
+                                  },
+                                ),
+                                icon: const Icon(Icons.star_rounded, size: 16, color: Color(0xFFFBBF24)),
+                                label: const Text(
+                                  'Rate Stay',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.2),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF006CE4),
+                                  foregroundColor: Colors.white,
+                                  elevation: 2,
+                                  shadowColor: const Color(0xFF006CE4).withValues(alpha: 0.35),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                     ],
                   ),

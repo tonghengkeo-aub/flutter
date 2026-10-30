@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/category_model.dart';
@@ -96,9 +96,11 @@ class RoomService {
     final parsedBedType = (r['bedType']?.toString().isNotEmpty == true)
         ? r['bedType'].toString()
         : '1 King Bed';
-    final parsedFoodType = (r['foodType']?.toString().isNotEmpty == true)
-        ? r['foodType'].toString()
-        : 'Breakfast included';
+    final bool incBfast = (r['includesBreakfast'] == true || r['includesBreakfast']?.toString() == 'true');
+    final String rawFood = r['foodType']?.toString().trim() ?? '';
+    final parsedFoodType = rawFood.isNotEmpty
+        ? rawFood
+        : (incBfast ? 'Breakfast included' : 'Room only');
     final parsedMapUrl = (r['mapUrl']?.toString().isNotEmpty == true)
         ? r['mapUrl'].toString()
         : ((r['hotel']?['mapUrl']?.toString().isNotEmpty == true)
@@ -111,6 +113,7 @@ class RoomService {
 
     final parsedAvailable = (r['availableUnits'] as num?)?.toInt() ?? 5;
     final parsedTotal = (r['totalRooms'] as num?)?.toInt() ?? parsedAvailable;
+    final parsedMaxGuests = (r['maxGuests'] as num?)?.toInt() ?? 2;
 
     return ServiceModel(
       id: r['id'] ?? (100 + (int.tryParse(roomNum) ?? 0)),
@@ -127,9 +130,9 @@ class RoomService {
       isFeatured: parsedPrice >= 75 || parsedRating >= 4.9 || rawType == 'VIP' || rawType == 'SUITE',
       isPopular: true,
       categoryName: typeDisplay,
-      locationName: r['hotel']?['name'] ?? 'Grand Luxury Hotel Phnom Penh',
-      locationAddress: r['hotel']?['address'] ?? 'Preah Sisowath Quay, Daun Penh',
-      province: r['hotel']?['province'] ?? 'Phnom Penh',
+      locationName: r['hotel']?['name'] ?? 'Boss_Heng Luxury Hotel',
+      locationAddress: r['hotel']?['address'] ?? 'National Road 2, Ta Khmau, Kandal',
+      province: (r['hotel']?['province']?.toString().isNotEmpty == true) ? r['hotel']!['province'].toString() : 'Kandal',
       providers: [],
       starRating: parsedStars,
       foodType: parsedFoodType,
@@ -139,6 +142,8 @@ class RoomService {
       roomTier: r['roomTier']?.toString().toUpperCase() ?? 'STANDARD',
       availableUnits: parsedAvailable,
       totalRooms: parsedTotal,
+      includesBreakfast: incBfast,
+      maxGuests: parsedMaxGuests,
     );
   }
 
@@ -265,8 +270,8 @@ class RoomService {
     return HotelModel(
       id: 1,
       name: 'Boss_Heng Luxury Hotel',
-      province: 'Phnom Penh',
-      address: 'Riverside Blvd, Daun Penh, Phnom Penh',
+      province: 'Kandal',
+      address: 'National Road 2, Ta Khmau, Kandal',
       phone: '023888999',
       email: 'info@bosshenghotel.com',
       rating: 4.9,

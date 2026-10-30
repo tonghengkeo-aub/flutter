@@ -1,9 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../models/service_model.dart';
 import '../services/api_service.dart';
+import '../widgets/interactive_hotel_map.dart';
+import '../widgets/hotel_guest_reviews_card.dart';
+import '../widgets/hotel_surroundings_widget.dart';
+import '../widgets/hotel_rating_breakdown_widget.dart';
 import 'room_selection_screen.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
@@ -18,7 +23,47 @@ class ServiceDetailScreen extends StatefulWidget {
 class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   bool _isDescriptionExpanded = false;
   bool _showAllReviewCategories = false;
-  int _selectedSurroundingTab = 0; // 0 = Eat & Drink, 1 = Transportation, 2 = Attractions
+  int _selectedGuestReviewIndex = 0;
+
+  static const List<Map<String, dynamic>> _topGuestReviews = [
+    {
+      'author': 'Sophea Pich',
+      'location': 'Phnom Penh, Cambodia',
+      'tag': 'Family Stay',
+      'rating': 5.0,
+      'date': '2 days ago',
+      'comment': 'Booking directly through the app was super fast and seamless! The room was sparkling clean, staff was very attentive, and the breakfast buffet was fresh with great variety.',
+    },
+    {
+      'author': 'Nicholas M.',
+      'location': 'United Kingdom',
+      'tag': 'Couple',
+      'rating': 5.0,
+      'date': '5 days ago',
+      'comment': 'The rooftop pool and peaceful sunset view along the river were unforgettable. Most comfortable bed I have ever slept in, and contactless QR check-in made arrival a breeze!',
+    },
+    {
+      'author': 'Dara Chan',
+      'location': 'Kandal, Cambodia',
+      'tag': 'Solo Traveler',
+      'rating': 5.0,
+      'date': '1 week ago',
+      'comment': 'Exceptional 5-star hospitality! Super fast WiFi, pristine bathroom, quiet climate AC, and delicious authentic Khmer dishes. Best hotel stay in the area!',
+    },
+    {
+      'author': 'Elena & David',
+      'location': 'France',
+      'tag': 'Couple',
+      'rating': 5.0,
+      'date': '2 weeks ago',
+      'comment': 'Outstanding experience from booking on the app to check-out. The customer service was world-class, breathtaking river views, and five-star cleanliness throughout.',
+    },
+  ];
+
+  // Dynamic reviews loaded from database API (all reviews, newest first)
+  late List<Map<String, dynamic>> _dynamicReviews;
+  double? _dynamicAverageRating;
+  int? _dynamicReviewCount;
 
   // Dynamic gallery photos from room data
   late final List<String> _galleryPhotos;
@@ -26,12 +71,86 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _dynamicReviews = List.from(_topGuestReviews);
+    _loadHotelReviews();
     if (widget.service.images.isNotEmpty) {
       _galleryPhotos = widget.service.images.where((s) => s.trim().isNotEmpty).toList();
     } else if (widget.service.imageUrl.trim().isNotEmpty) {
       _galleryPhotos = [widget.service.imageUrl.trim()];
     } else {
       _galleryPhotos = [];
+    }
+  }
+
+  Future<void> _loadHotelReviews() async {
+    try {
+      final res = await http.get(Uri.parse('${ApiService.baseUrl}/reviews'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        if (data.isNotEmpty) {
+          // Backend returns reviews newest-first (createdAt DESC).
+          // Map all reviews directly so the latest review (e.g. #8 sokleng) is at index 0
+          final mapped = data.map((r) {
+            final double rating = (r['rating'] as num?)?.toDouble() ?? 5.0;
+            final String name = r['guestName']?.toString().isNotEmpty == true
+                ? r['guestName'].toString()
+                : (r['customer']?['fullName']?.toString() ?? 'Verified Guest');
+            final String loc = r['location']?.toString().isNotEmpty == true
+                ? r['location'].toString()
+                : 'Cambodia';
+            final String tag = r['stayType']?.toString().isNotEmpty == true
+                ? r['stayType'].toString()
+                : 'Verified Stay';
+            final String comment = r['comment']?.toString().isNotEmpty == true
+                ? r['comment'].toString()
+                : 'Wonderful stay!';
+            final String dateStr = r['createdAt']?.toString().isNotEmpty == true
+                ? _formatReviewDate(r['createdAt'].toString())
+                : 'Recently';
+            return {
+              'id': r['id'],
+              'author': name,
+              'location': loc,
+              'tag': tag,
+              'rating': rating,
+              'date': dateStr,
+              'comment': comment,
+            };
+          }).toList();
+
+          double totalRating = 0.0;
+          for (final item in mapped) {
+            totalRating += (item['rating'] as double? ?? 5.0);
+          }
+          final double avg = mapped.isNotEmpty ? (totalRating / mapped.length) : 4.8;
+
+          if (mounted && mapped.isNotEmpty) {
+            setState(() {
+              _dynamicReviews = mapped;
+              _dynamicAverageRating = double.parse(avg.toStringAsFixed(1));
+              _dynamicReviewCount = mapped.length;
+              if (_selectedGuestReviewIndex >= _dynamicReviews.length) {
+                _selectedGuestReviewIndex = 0;
+              }
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  String _formatReviewDate(String rawDate) {
+    try {
+      final dt = DateTime.parse(rawDate);
+      final diff = DateTime.now().difference(dt);
+      if (diff.inDays == 0) return 'Today';
+      if (diff.inDays == 1) return 'Yesterday';
+      if (diff.inDays < 7) return '${diff.inDays} days ago';
+      if (diff.inDays < 30) return '${(diff.inDays / 7).floor()} weeks ago';
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return 'Recently';
     }
   }
 
@@ -55,6 +174,66 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       }
     }
     return raw;
+  }
+
+  Widget _buildTierBadge(String? tier, bool isDark) {
+    final upper = (tier ?? 'STANDARD').toUpperCase();
+    Color bg;
+    Color border;
+    Color fg;
+    IconData icon;
+    String label;
+
+    switch (upper) {
+      case 'DELUXE':
+        bg = isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF);
+        border = isDark ? const Color(0xFF3B82F6) : const Color(0xFF93C5FD);
+        fg = isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
+        icon = Icons.star_rounded;
+        label = 'Deluxe Room';
+        break;
+      case 'PREMIUM':
+      case 'VIP':
+        bg = isDark ? const Color(0xFF4C1D95).withValues(alpha: 0.35) : const Color(0xFFFAF5FF);
+        border = isDark ? const Color(0xFFA855F7) : const Color(0xFFD8B4FE);
+        fg = isDark ? const Color(0xFFD8B4FE) : const Color(0xFF7E22CE);
+        icon = Icons.workspace_premium_rounded;
+        label = 'Premium Room';
+        break;
+      case 'STANDARD':
+      default:
+        bg = isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFECFDF5);
+        border = isDark ? const Color(0xFF10B981) : const Color(0xFFA7F3D0);
+        fg = isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857);
+        icon = Icons.verified_rounded;
+        label = 'Standard Room';
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: border, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildImageWidget(String url, {BoxFit fit = BoxFit.cover}) {
@@ -594,8 +773,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final double bookingScore = widget.service.rating > 0 ? widget.service.rating : 4.8;
-    final int reviewCount = widget.service.reviewCount > 0 ? widget.service.reviewCount : 128;
+    final double bookingScore = _dynamicAverageRating ?? (widget.service.rating > 0 ? widget.service.rating : 4.8);
+    final int reviewCount = _dynamicReviewCount ?? (widget.service.reviewCount > 0 ? widget.service.reviewCount : 8);
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
@@ -657,26 +836,33 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Room Type Badge
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: isDark ? const Color(0xFF2563EB) : const Color(0xFF93C5FD)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.hotel_rounded, size: 13, color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8)),
-                        const SizedBox(width: 5),
-                        Text(
-                          widget.service.roomTypeDisplay,
-                          style: TextStyle(color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8), fontSize: 11.5, fontWeight: FontWeight.bold),
+                  // Room Type & Tier Badges
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: isDark ? const Color(0xFF2563EB) : const Color(0xFF93C5FD)),
                         ),
-                      ],
-                    ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.hotel_rounded, size: 13, color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8)),
+                            const SizedBox(width: 5),
+                            Text(
+                              widget.service.roomTypeDisplay,
+                              style: TextStyle(color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8), fontSize: 11.5, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _buildTierBadge(widget.service.roomTier, isDark),
+                    ],
                   ),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -760,12 +946,17 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                                 children: [
                                   TextSpan(
                                     text: widget.service.locationAddress.isNotEmpty
-                                        ? '${widget.service.locationAddress}, ${widget.service.province}, Cambodia'
-                                        : '#4&6, Street 148, Sangkat Phsar Kandal I, Daun Penh, Phnom Penh, Cambodia',
+                                        ? (widget.service.locationAddress.toLowerCase().contains(widget.service.province.toLowerCase())
+                                            ? '${widget.service.locationAddress}, Cambodia'
+                                            : '${widget.service.locationAddress}, ${widget.service.province}, Cambodia')
+                                        : 'National Road 2, Ta Khmau, Kandal, Cambodia',
                                   ),
                                   TextSpan(
-                                    text: ' • Open in Maps ↗',
-                                    style: TextStyle(color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF003580), fontWeight: FontWeight.bold),
+                                    text: ' • Open in Google Maps',
+                                    style: TextStyle(
+                                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1A73E8),
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -800,11 +991,15 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       scrollDirection: Axis.horizontal,
                       children: [
                         _buildHighlightCard(
-                          icon: Icons.restaurant_menu_rounded,
+                          icon: widget.service.hasBreakfast
+                              ? Icons.restaurant_menu_rounded
+                              : Icons.no_meals_rounded,
                           title: 'Meal Plan',
-                          subtitle: widget.service.foodType.isNotEmpty
-                              ? widget.service.foodType
-                              : 'Breakfast included',
+                          subtitle: widget.service.hasBreakfast
+                              ? (widget.service.foodType.isNotEmpty && !widget.service.foodType.toLowerCase().contains('room only')
+                                  ? widget.service.foodType
+                                  : 'Breakfast included')
+                              : 'Room only',
                         ),
                         _buildHighlightCard(
                           icon: Icons.wifi_rounded,
@@ -845,17 +1040,33 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                         ),
                         child: Text(
                           bookingScore.toStringAsFixed(1),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            bookingScore >= 4.8 ? 'Wonderful' : (bookingScore >= 4.5 ? 'Superb' : (bookingScore >= 4.0 ? 'Very Good' : 'Good')),
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
+                          Row(
+                            children: [
+                              Text(
+                                bookingScore >= 4.8 ? 'Wonderful' : (bookingScore >= 4.5 ? 'Superb' : (bookingScore >= 4.0 ? 'Very Good' : 'Good')),
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
+                              ),
+                              const SizedBox(width: 6),
+                              ...List.generate(5, (i) {
+                                final double fill = (bookingScore - i).clamp(0.0, 1.0);
+                                return Icon(
+                                  fill >= 0.75
+                                      ? Icons.star_rounded
+                                      : (fill >= 0.25 ? Icons.star_half_rounded : Icons.star_border_rounded),
+                                  color: const Color(0xFFF59E0B),
+                                  size: 15,
+                                );
+                              }),
+                            ],
                           ),
+                          const SizedBox(height: 2),
                           Text(
                             'See $reviewCount detailed reviews >',
                             style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF0284C7), fontWeight: FontWeight.w600),
@@ -867,15 +1078,24 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   const SizedBox(height: 16),
 
                   // Rating Bars
-                  _buildRatingBar('Cleanliness', 8.7),
-                  _buildRatingBar('Comfort', 8.7),
-                  _buildRatingBar('Facilities', 8.5),
-                  _buildRatingBar('Location', 9.3),
-                  if (_showAllReviewCategories) ...[
-                    _buildRatingBar('Staff', 9.1),
-                    _buildRatingBar('Value for money', 8.6),
-                    _buildRatingBar('WiFi', 7.7),
-                  ],
+                  HotelRatingBreakdownWidget(
+                    ratingScores: _showAllReviewCategories
+                        ? const {
+                            'Cleanliness': 8.7,
+                            'Comfort': 8.7,
+                            'Facilities': 8.5,
+                            'Location': 9.3,
+                            'Staff': 9.1,
+                            'Value for money': 8.6,
+                            'WiFi': 7.7,
+                          }
+                        : const {
+                            'Cleanliness': 8.7,
+                            'Comfort': 8.7,
+                            'Facilities': 8.5,
+                            'Location': 9.3,
+                          },
+                  ),
 
                   GestureDetector(
                     onTap: () {
@@ -893,32 +1113,15 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
 
                   const SizedBox(height: 12),
-                  Text(
-                    'Guests who stayed here loved',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A)),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '"The rooftop pool and sunset view over the Mekong were unforgettable. Breakfast was fresh with great variety!"',
-                          style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13, color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '— Nicholas, United Kingdom (Couple)',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                        ),
-                      ],
-                    ),
+                  HotelGuestReviewsCard(
+                    reviews: _dynamicReviews.isNotEmpty ? _dynamicReviews : _topGuestReviews,
+                    selectedIndex: _selectedGuestReviewIndex,
+                    onIndexChanged: (idx) => setState(() => _selectedGuestReviewIndex = idx),
+                    onReviewSubmitted: _loadHotelReviews,
+                    hotelName: widget.service.locationName.isNotEmpty ? widget.service.locationName : widget.service.name,
+                    hotelAddress: widget.service.locationAddress.isNotEmpty
+                        ? widget.service.locationAddress
+                        : 'National Road 2, Ta Khmau, Kandal',
                   ),
                 ],
               ),
@@ -937,70 +1140,14 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Mini Map Container (Clickable to open in Google Maps)
-                  InkWell(
-                    onTap: () async {
-                      final url = widget.service.mapUrl.isNotEmpty
-                          ? widget.service.mapUrl
-                          : 'https://maps.google.com/?q=${Uri.encodeComponent('${widget.service.name}, ${widget.service.province}')}';
-                      final uri = Uri.parse(url);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      height: 120,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: const Color(0xFF1E293B),
-                        image: const DecorationImage(
-                          image: NetworkImage('https://images.unsplash.com/photo-1524661135-423995f22d0b?w=600'),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          color: Colors.black.withValues(alpha: 0.4),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.location_on, color: Color(0xFFEF4444), size: 30),
-                              const SizedBox(height: 2),
-                              Text(
-                                widget.service.locationAddress.isNotEmpty
-                                    ? widget.service.locationAddress
-                                    : 'Phsar Kandal I, Daun Penh',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                              const SizedBox(height: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF2563EB) : const Color(0xFF003580),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.map, color: Colors.white, size: 12),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'Open in Google Maps ↗',
-                                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                  // Real Interactive Map (Touch, Pan, Zoom, Fullscreen, Open in Google Maps)
+                  InteractiveHotelMap(
+                    mapUrl: widget.service.mapUrl,
+                    hotelName: widget.service.locationName.isNotEmpty ? widget.service.locationName : widget.service.name,
+                    locationAddress: widget.service.locationAddress.isNotEmpty
+                        ? widget.service.locationAddress
+                        : 'National Road 2, Ta Khmau, Kandal',
+                    height: 200,
                   ),
                   const SizedBox(height: 10),
 
@@ -1016,18 +1163,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Tab Bar: Eat & drink, Transportation, Attractions
-                  Row(
-                    children: [
-                      _buildSurroundingTab('Eat and drink', 0, Icons.restaurant_rounded),
-                      _buildSurroundingTab('Transportation', 1, Icons.directions_transit_rounded),
-                      _buildSurroundingTab('Attractions', 2, Icons.attractions_rounded),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // List of Surrounding Spots based on Tab
-                  ..._buildSurroundingItems(),
+                  // Tab Bar & Nearby Spots
+                  const HotelSurroundingsWidget(),
                 ],
               ),
             ),
@@ -1323,124 +1460,6 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     );
   }
 
-  Widget _buildRatingBar(String label, double score) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final double percent = (score / 10.0).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155))),
-              Text(score.toStringAsFixed(1), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A))),
-            ],
-          ),
-          const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: percent,
-              backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-              color: isDark ? const Color(0xFF3B82F6) : const Color(0xFF003580),
-              minHeight: 5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSurroundingTab(String title, int index, IconData icon) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSelected = _selectedSurroundingTab == index;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedSurroundingTab = index;
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? (isDark ? const Color(0xFF2563EB) : const Color(0xFF003580))
-              : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569))),
-            const SizedBox(width: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildSurroundingItems() {
-    if (_selectedSurroundingTab == 0) {
-      return [
-        _buildSurroundingRow('Pepper Lunch', '15 min (4,300 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('Space Hair Salon and Bar', '2 min (780 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('Corner 136 Bar', '3 min (880 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('Loco Bar', '4 min (1,200 ft)', Icons.directions_walk_rounded),
-      ];
-    } else if (_selectedSurroundingTab == 1) {
-      return [
-        _buildSurroundingRow('Sorya Bus Station', '8 min (2,400 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('Phnom Penh Train Station', '12 min (1.2 mi)', Icons.directions_car_rounded),
-        _buildSurroundingRow('Phnom Penh Airport (PNH)', '35 min (6.2 mi)', Icons.directions_car_rounded),
-      ];
-    } else {
-      return [
-        _buildSurroundingRow('Royal Palace & Silver Pagoda', '6 min (1,800 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('National Museum of Cambodia', '5 min (1,500 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('Wat Phnom Historical Hill', '10 min (2,900 ft)', Icons.directions_walk_rounded),
-        _buildSurroundingRow('Riverside Night Market', '3 min (900 ft)', Icons.directions_walk_rounded),
-      ];
-    }
-  }
-
-  Widget _buildSurroundingRow(String name, String distance, IconData icon) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B), fontWeight: FontWeight.w500),
-            ),
-          ),
-          Row(
-            children: [
-              Icon(icon, size: 14, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-              const SizedBox(width: 4),
-              Text(
-                distance,
-                style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildFacilityItem(IconData icon, String title) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
@@ -1481,4 +1500,5 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       ),
     );
   }
+
 }

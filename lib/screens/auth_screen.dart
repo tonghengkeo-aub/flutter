@@ -49,6 +49,10 @@ class _AuthScreenState extends State<AuthScreen> {
   final passwordController = TextEditingController();
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
+  final nameFocusNode = FocusNode();
+  final phoneFocusNode = FocusNode();
+  final emailFocusNode = FocusNode();
+  final passwordFocusNode = FocusNode();
   String selectedGender = 'Not Specified';
   String selectedProvince = 'Phnom Penh';
 
@@ -66,6 +70,10 @@ class _AuthScreenState extends State<AuthScreen> {
     passwordController.dispose();
     nameController.dispose();
     phoneController.dispose();
+    nameFocusNode.dispose();
+    phoneFocusNode.dispose();
+    emailFocusNode.dispose();
+    passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -108,7 +116,7 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -120,22 +128,24 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 20),
                 Center(
                   child: Container(
-                    width: 72,
-                    height: 72,
+                    width: 76,
+                    height: 76,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFEAB308), Color(0xFFCA8A04)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFEAB308).withValues(alpha: 0.3),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
+                          color: const Color(0xFFEAB308).withValues(alpha: 0.35),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.calendar_month_rounded, size: 40, color: Color(0xFF0F172A)),
+                    child: const Icon(Icons.hotel_rounded, size: 44, color: Colors.white),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -145,32 +155,40 @@ class _AuthScreenState extends State<AuthScreen> {
                         ? RoomService.cachedHotel!.name
                         : 'Boss_Heng Luxury Hotel',
                     style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
                       letterSpacing: -0.5,
                     ),
                     textAlign: TextAlign.center,
                   ),
                 ),
+                const SizedBox(height: 4),
                 Center(
                   child: Text(
                     RoomService.cachedHotel?.tagline.isNotEmpty == true
                         ? RoomService.cachedHotel!.tagline
-                        : 'Luxury Hotel Rooms, Suites & Villas Booking',
-                    style: const TextStyle(color: Colors.white60, fontSize: 13),
+                        : 'Exclusive 5-Star Riverside Sanctuary',
+                    style: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500),
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 28),
 
                 // Form Container
                 Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white10),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+                        blurRadius: 22,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -178,10 +196,17 @@ class _AuthScreenState extends State<AuthScreen> {
                       Text(
                         isLogin ? 'Customer Sign In' : 'Create New Account',
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: Color(0xFF0F172A),
                         ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isLogin
+                            ? 'Welcome back! Please enter your details.'
+                            : 'Register to unlock member rates and seamless bookings.',
+                        style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 18),
 
@@ -194,17 +219,20 @@ class _AuthScreenState extends State<AuthScreen> {
                               padding: EdgeInsets.only(bottom: 6),
                               child: Text(
                                 'Letters only (A-Z)',
-                                style: TextStyle(color: Color(0xFF38BDF8), fontSize: 10.5, fontWeight: FontWeight.w500),
+                                style: TextStyle(color: Color(0xFF0284C7), fontSize: 10.5, fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
                         ),
                         TextFormField(
                           controller: nameController,
+                          focusNode: nameFocusNode,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: (_) => FocusScope.of(context).requestFocus(phoneFocusNode),
                           keyboardType: TextInputType.name,
                           textCapitalization: TextCapitalization.words,
                           autovalidateMode: AutovalidateMode.onUserInteraction,
-                          style: const TextStyle(color: Colors.white),
+                          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z\u1780-\u17FF\s\.\-']")),
                             LengthLimitingTextInputFormatter(60),
@@ -235,20 +263,21 @@ class _AuthScreenState extends State<AuthScreen> {
                             _buildLabel('Phone Number *'),
                             const Padding(
                               padding: EdgeInsets.only(bottom: 6),
-
                               child: Text(
-                                'Numbers only ',
-                                style: TextStyle(color: Color(0xFF10B981), fontSize: 10.5, fontWeight: FontWeight.w500),
+                                'Numbers only',
+                                style: TextStyle(color: Color(0xFF10B981), fontSize: 10.5, fontWeight: FontWeight.w600),
                               ),
-                              
                             ),
                           ],
                         ),
                         TextFormField(
                           controller: phoneController,
+                          focusNode: phoneFocusNode,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: (_) => FocusScope.of(context).requestFocus(emailFocusNode),
                           keyboardType: TextInputType.number,
                           autovalidateMode: AutovalidateMode.onUserInteraction,
-                          style: const TextStyle(color: Colors.white),
+                          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(12),
@@ -274,16 +303,16 @@ class _AuthScreenState extends State<AuthScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A),
+                            color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
                               value: selectedGender,
                               isExpanded: true,
-                              dropdownColor: const Color(0xFF1E293B),
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              dropdownColor: Colors.white,
+                              style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
                               items: ['Not Specified', 'Male', 'Female', 'Other']
                                   .map((g) => DropdownMenuItem(value: g, child: Text(g)))
                                   .toList(),
@@ -299,22 +328,22 @@ class _AuthScreenState extends State<AuthScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A),
+                            color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.location_on_outlined, color: Colors.white54, size: 20),
+                              const Icon(Icons.location_on_outlined, color: Color(0xFF64748B), size: 20),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: DropdownButtonHideUnderline(
                                   child: DropdownButton<String>(
                                     value: selectedProvince,
                                     isExpanded: true,
-                                    dropdownColor: const Color(0xFF1E293B),
-                                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                                    icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                                    dropdownColor: Colors.white,
+                                    style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
+                                    icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF64748B)),
                                     items: AuthScreen.cambodiaProvinces
                                         .map((p) => DropdownMenuItem(
                                               value: p,
@@ -336,9 +365,18 @@ class _AuthScreenState extends State<AuthScreen> {
                       _buildLabel('Email Address *'),
                       TextFormField(
                         controller: emailController,
+                        focusNode: emailFocusNode,
+                        textInputAction: TextInputAction.next,
+                        onFieldSubmitted: (_) {
+                          if (passwordController.text.trim().isEmpty) {
+                            FocusScope.of(context).requestFocus(passwordFocusNode);
+                          } else {
+                            if (!isLoading) submit();
+                          }
+                        },
                         keyboardType: TextInputType.emailAddress,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
                         inputFormatters: [
                           FilteringTextInputFormatter.deny(RegExp(r'\s')),
                         ],
@@ -357,9 +395,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       _buildLabel('Password *'),
                       TextFormField(
                         controller: passwordController,
+                        focusNode: passwordFocusNode,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) {
+                          if (!isLoading) submit();
+                        },
                         obscureText: obscurePassword,
                         autovalidateMode: AutovalidateMode.onUserInteraction,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.w500),
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Please enter password';
                           if (v.length < 6) return 'Password must be at least 6 characters';
@@ -369,7 +412,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           suffixIcon: IconButton(
                             icon: Icon(
                               obscurePassword ? Icons.visibility_off : Icons.visibility,
-                              color: Colors.white54,
+                              color: const Color(0xFF64748B),
                               size: 20,
                             ),
                             onPressed: () => setState(() => obscurePassword = !obscurePassword),
@@ -386,7 +429,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFEAB308),
                             foregroundColor: const Color(0xFF0F172A),
-                            elevation: 2,
+                            elevation: 1,
+                            shadowColor: const Color(0xFFEAB308).withValues(alpha: 0.4),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           child: isLoading
@@ -401,61 +445,6 @@ class _AuthScreenState extends State<AuthScreen> {
                                 ),
                         ),
                       ),
-
-                      if (isLogin) ...[
-                        const SizedBox(height: 18),
-                        const Divider(color: Colors.white12),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Demo Accounts (Tap to auto-fill):',
-                          style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  setState(() {
-                                    emailController.text = 'customer@booking.com';
-                                    passwordController.text = 'password123';
-                                  });
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.white24),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                ),
-                                child: const Text(
-                                  'Customer Demo',
-                                  style: TextStyle(color: Color(0xFFEAB308), fontSize: 11),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  setState(() {
-                                    emailController.text = 'dara@booking.com';
-                                    passwordController.text = 'password123';
-                                  });
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.white24),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                ),
-                                child: const Text(
-                                  'Dara Demo',
-                                  style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        
-                      ],
                     ],
                   ),
                 ),
@@ -474,7 +463,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       isLogin
                           ? "Don't have an account? Create one"
                           : 'Already have an account? Sign In',
-                      style: const TextStyle(color: Color(0xFFEAB308), fontSize: 14, fontWeight: FontWeight.w600),
+                      style: const TextStyle(color: Color(0xFF006CE4), fontSize: 14, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -491,7 +480,7 @@ class _AuthScreenState extends State<AuthScreen> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+        style: const TextStyle(color: Color(0xFF334155), fontSize: 12.5, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -499,18 +488,18 @@ class _AuthScreenState extends State<AuthScreen> {
   InputDecoration _inputDecoration(String hint, IconData icon) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-      prefixIcon: Icon(icon, color: Colors.white54, size: 20),
+      hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+      prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20),
       filled: true,
-      fillColor: const Color(0xFF0F172A),
+      fillColor: const Color(0xFFF8FAFC),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white12),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white12),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),

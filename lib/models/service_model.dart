@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 import 'provider_model.dart';
 
 class ServiceModel {
@@ -40,6 +40,14 @@ class ServiceModel {
   final int hotelId;
   final int availableUnits;
   final int totalRooms;
+  final bool includesBreakfast;
+  final int maxGuests;
+
+  bool get hasBreakfast =>
+      includesBreakfast ||
+      (foodType.toLowerCase().contains('breakfast') &&
+          !foodType.toLowerCase().contains('no breakfast') &&
+          !foodType.toLowerCase().contains('room only'));
 
   ServiceModel({
     required this.id,
@@ -61,13 +69,15 @@ class ServiceModel {
     required this.providers,
     this.images = const [],
     this.starRating = 5,
-    this.foodType = 'Breakfast included',
-    this.mapUrl = 'https://maps.google.com/?q=Riverside+Blvd+Phnom+Penh',
+    this.foodType = 'Room only',
+    this.mapUrl = 'https://maps.app.goo.gl/HL3kPor7pDvYhUBT8',
     this.bedType = '1 King Bed',
     this.roomType = 'DOUBLE',
     this.roomTier = 'STANDARD',
     this.availableUnits = 1,
     this.totalRooms = 1,
+    this.includesBreakfast = false,
+    this.maxGuests = 2,
   });
 
   String get cleanName {
@@ -102,8 +112,8 @@ class ServiceModel {
     }
 
     String locName = 'Headquarters';
-    String locAddr = 'Phnom Penh, Cambodia';
-    String prov = 'Phnom Penh';
+    String locAddr = 'National Road 2, Ta Khmau, Kandal';
+    String prov = 'Kandal';
     if (json['location'] != null) {
       locName = json['location']['name'] ?? locName;
       locAddr = json['location']['address'] ?? locAddr;
@@ -158,12 +168,15 @@ class ServiceModel {
     final int sRating = json['starRating'] is int
         ? json['starRating']
         : int.tryParse(json['starRating']?.toString() ?? '5') ?? 5;
-    final String fType = json['foodType']?.toString().isNotEmpty == true
-        ? json['foodType'].toString()
-        : 'Breakfast included';
+    final bool incBfast = json['includesBreakfast'] == true ||
+        (json['includesBreakfast'] != null && json['includesBreakfast'].toString() == 'true');
+    final String rawFood = json['foodType']?.toString().trim() ?? '';
+    final String fType = rawFood.isNotEmpty
+        ? rawFood
+        : (incBfast ? 'Breakfast included' : 'Room only');
     final String mUrl = json['mapUrl']?.toString().isNotEmpty == true
         ? json['mapUrl'].toString()
-        : (json['location']?['mapUrl']?.toString() ?? 'https://maps.google.com/?q=Riverside+Blvd+Phnom+Penh');
+        : (json['location']?['mapUrl']?.toString() ?? 'https://maps.app.goo.gl/HL3kPor7pDvYhUBT8');
     final String bType = json['bedType']?.toString().isNotEmpty == true
         ? json['bedType'].toString()
         : '1 King Bed';
@@ -174,6 +187,24 @@ class ServiceModel {
     final int tRooms = json['totalRooms'] != null
         ? (int.tryParse(json['totalRooms'].toString()) ?? aUnits)
         : aUnits;
+
+    final String parsedType = json['type']?.toString().toUpperCase() ?? (json['roomType']?.toString().toUpperCase() ?? 'DOUBLE');
+    int mGuests = 2;
+    if (json['maxGuests'] != null) {
+      mGuests = int.tryParse(json['maxGuests'].toString()) ?? 2;
+    } else {
+      if (parsedType.contains('SINGLE')) {
+        mGuests = 1;
+      } else if (parsedType.contains('TRIPLE')) {
+        mGuests = 3;
+      } else if (parsedType.contains('FAMILY')) {
+        mGuests = 4;
+      } else if (parsedType.contains('SUITE') || parsedType.contains('VIP')) {
+        mGuests = 4;
+      } else {
+        mGuests = 2;
+      }
+    }
 
     return ServiceModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
@@ -197,11 +228,13 @@ class ServiceModel {
       foodType: fType,
       mapUrl: mUrl,
       bedType: bType,
-      roomType: json['type']?.toString().toUpperCase() ?? (json['roomType']?.toString().toUpperCase() ?? 'DOUBLE'),
+      roomType: parsedType,
       roomTier: json['roomTier'] != null && json['roomTier'].toString().isNotEmpty ? json['roomTier'].toString().toUpperCase() : 'STANDARD',
       hotelId: json['hotel'] != null ? (json['hotel']['id'] ?? 1) : (json['hotelId'] ?? 1),
       availableUnits: aUnits,
       totalRooms: tRooms,
+      includesBreakfast: incBfast,
+      maxGuests: mGuests,
     );
   }
 }

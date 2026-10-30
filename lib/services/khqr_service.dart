@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -39,8 +40,8 @@ class KhqrPaymentData {
       fullDeeplink: json['fullDeeplink'],
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] ?? 'USD',
-      merchantName: json['merchantName'] ?? 'LUXE HOTEL RESORT',
-      bakongAccountId: json['bakongAccountId'] ?? 'abaakhppxxx',
+      merchantName: json['merchantName'] ?? 'Boss Heng Luxury Hotel',
+      bakongAccountId: json['bakongAccountId'] ?? 'sen_tongheng@bkrt',
       abaUsdAccount: json['abaUsdAccount'] ?? '003952523',
       abaKhrAccount: json['abaKhrAccount'] ?? '500855050',
       billNumber: json['billNumber'] ?? '',
@@ -52,8 +53,9 @@ class KhqrService {
   static const String defaultBakongToken =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImlkIjoiYjFhZDAxNmI3NDVmNDZjOSJ9LCJpYXQiOjE3OTEzNzUwMTAsImV4cCI6MTc5OTE1MTAxMH0.AkC-liS-KvH1VsJo0IjdHjz9OlABEblBVSGmhzVKY0Y';
 
-  static const String defaultAcquiringBank = 'abaakhppxxx';
-  static const String defaultMerchantName = 'LUXE HOTEL RESORT';
+  static const String defaultAcquiringBank = 'bkrtkhppxxx';
+  static const String defaultBakongAccount = 'sen_tongheng@bkrt';
+  static const String defaultMerchantName = 'Boss Heng Luxury Hotel';
   static const String defaultCity = 'Phnom Penh';
   static const String defaultAbaUsd = '003952523';
   static const String defaultAbaKhr = '500855050';
@@ -147,6 +149,35 @@ class KhqrService {
     return {'paid': false, 'responseMessage': 'Pending scan'};
   }
 
+  /// Confirm payment explicitly via backend
+  static Future<Map<String, dynamic>> confirmPayment({
+    required int bookingId,
+    required double amount,
+    String? md5,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiClient.baseUrl}/bakong/confirm-payment'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'bookingId': bookingId,
+          'amount': amount,
+          'md5': md5 ?? '',
+        }),
+      ).timeout(const Duration(seconds: 5));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+      }
+    } catch (e) {
+      debugPrint('confirmPayment error: $e');
+    }
+    return {'success': false, 'paid': false};
+  }
+
   /// Launch Bakong/ABA deep link
   static Future<bool> launchBakongDeeplink(String? url) async {
     if (url == null || url.isEmpty) return false;
@@ -165,17 +196,16 @@ class KhqrService {
     final isKhr = currency.toUpperCase() == 'KHR' || currency == '116';
     final currencyCode = isKhr ? '116' : '840';
     final formattedAmt = isKhr ? amount.round().toString() : amount.toStringAsFixed(2);
-    final targetAccount = isKhr ? defaultAbaKhr : defaultAbaUsd;
 
-    // Tag 30 for ABA Bank direct account routing
-    final sub00 = _tlv(0, defaultAcquiringBank);
-    final sub01 = _tlv(1, targetAccount);
-    final tag30 = '30${(sub00.length + sub01.length).toString().padLeft(2, '0')}$sub00$sub01';
+    // Tag 29 for Bakong Account ID (sen_tongheng@bkrt)
+    final sub00 = _tlv(0, defaultBakongAccount);
+    final sub02 = _tlv(2, 'Bakong');
+    final tag29 = _tlv(29, '$sub00$sub02');
 
     final buffer = StringBuffer();
     buffer.write(_tlv(0, '01'));
     buffer.write(_tlv(1, '12'));
-    buffer.write(tag30);
+    buffer.write(tag29);
     buffer.write(_tlv(52, '5999'));
     buffer.write(_tlv(53, currencyCode));
     buffer.write(_tlv(54, formattedAmt));
@@ -186,22 +216,30 @@ class KhqrService {
     final subtagBill = _tlv(1, billNumber);
     buffer.write('62${subtagBill.length.toString().padLeft(2, '0')}$subtagBill');
 
+    // Tag 99: Timestamp Template (Mandatory for Dynamic KHQR 01=12)
+    final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    final expireMillis = nowMillis + (10 * 60 * 1000); // 10 minutes validity
+    final subtag00Time = _tlv(0, nowMillis.toString());
+    final subtag01Expire = _tlv(1, expireMillis.toString());
+    final tag99Content = '$subtag00Time$subtag01Expire';
+    buffer.write('99${tag99Content.length.toString().padLeft(2, '0')}$tag99Content');
+
     final raw = '${buffer.toString()}6304';
     final crc = calculateCrc16(raw);
     final khqr = '$raw$crc';
 
-    // Simple MD5
-    final md5 = _md5String(khqr);
+    // Standard cryptographic MD5 hash
+    final md5Hash = _md5String(khqr);
 
     return KhqrPaymentData(
       khqr: khqr,
-      md5: md5,
+      md5: md5Hash,
       deeplink: 'https://bakong-deeplink.nbc.gov.kh/bakong/payment?qr=${Uri.encodeComponent(khqr)}',
       fullDeeplink: 'https://bakong-deeplink.nbc.gov.kh/bakong/payment?qr=${Uri.encodeComponent(khqr)}',
       amount: amount,
       currency: isKhr ? 'KHR' : 'USD',
       merchantName: defaultMerchantName,
-      bakongAccountId: defaultAcquiringBank,
+      bakongAccountId: defaultBakongAccount,
       abaUsdAccount: defaultAbaUsd,
       abaKhrAccount: defaultAbaKhr,
       billNumber: billNumber,
@@ -231,14 +269,6 @@ class KhqrService {
   }
 
   static String _md5String(String input) {
-    // Basic hash approximation or standard via UTF8
-    final bytes = utf8.encode(input);
-    // Simple 32-hex representation
-    var h = 0x811c9dc5;
-    for (var b in bytes) {
-      h ^= b;
-      h = (h * 0x01000193) & 0xFFFFFFFF;
-    }
-    return h.toRadixString(16).padLeft(32, '0');
+    return md5.convert(utf8.encode(input)).toString();
   }
 }

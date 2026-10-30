@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/notification_model.dart';
 import 'api_client.dart';
+import 'room_service.dart';
 
 class NotificationService {
   static final List<NotificationModel> _localNotifications = [];
@@ -27,8 +28,8 @@ class NotificationService {
       _localNotifications.addAll([
         NotificationModel(
           id: 1,
-          title: 'Welcome to Booking Pro KH!',
-          message: 'Enjoy 10% off your first appointment with promo code WELCOME10.',
+          title: 'Welcome to ${RoomService.cachedHotel?.name.isNotEmpty == true ? RoomService.cachedHotel!.name : "Boss_Heng Luxury Hotel"}!',
+          message: 'Enjoy 10% off your first stay with promo code WELCOME10.',
           type: 'PROMOTION',
           isRead: false,
           createdAt: 'Today',
@@ -92,5 +93,29 @@ class NotificationService {
         createdAt: old.createdAt,
       );
     }
+  }
+
+  static Future<bool> deleteNotification(int id) async {
+    try {
+      await http.delete(
+        Uri.parse('${ApiClient.baseUrl}/notifications/$id'),
+        headers: ApiClient.defaultHeaders(isJson: false),
+      ).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+
+    _localNotifications.removeWhere((n) => n.id == id);
+    return true;
+  }
+
+  static Future<bool> clearAllNotifications() async {
+    try {
+      await http.delete(
+        Uri.parse('${ApiClient.baseUrl}/notifications/clear-all'),
+        headers: ApiClient.defaultHeaders(isJson: false),
+      ).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+
+    _localNotifications.clear();
+    return true;
   }
 }

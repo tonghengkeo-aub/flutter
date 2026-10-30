@@ -7,6 +7,7 @@ import '../models/hotel_model.dart';
 import '../models/room_model.dart';
 import '../services/api_service.dart';
 import 'payment_screen.dart';
+import 'select_stay_dates_screen.dart';
 
 class BookingFormScreen extends StatefulWidget {
   final ServiceModel? service;
@@ -62,10 +63,10 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   double extrasTotal = 0.0;
   double subtotal = 45.0;
   double discount = 0.0;
-  double serviceCharge = 2.25;
-  double serviceChargePercent = 5.0;
-  double tax = 4.73;
-  double taxPercent = 10.0;
+  double serviceCharge = 0.45;
+  double serviceChargePercent = 1.0;
+  double tax = 0.45;
+  double taxPercent = 1.0;
   double total = 51.98;
   double totalKhr = 213118.0;
   double depositPercent = 20.0;
@@ -84,7 +85,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     final user = ApiService.currentUser;
     if (user != null) {
       guestNameCtrl.text = user.fullName;
-      guestPhoneCtrl.text = user.phone;
+      guestPhoneCtrl.text = _formatPhoneNumber(user.phone);
       guestEmailCtrl.text = user.email;
     }
 
@@ -165,10 +166,10 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
           extrasTotal = (res['extrasTotal'] as num?)?.toDouble() ?? 0.0;
           subtotal = (res['subtotal'] as num?)?.toDouble() ?? (roomTotal + extrasTotal);
           discount = (res['discount'] as num?)?.toDouble() ?? 0.0;
-          serviceCharge = (res['serviceCharge'] as num?)?.toDouble() ?? (subtotal * 0.05);
-          serviceChargePercent = (res['serviceChargePercent'] as num?)?.toDouble() ?? 5.0;
-          tax = (res['tax'] as num?)?.toDouble() ?? ((subtotal + serviceCharge) * 0.10);
-          taxPercent = (res['taxPercent'] as num?)?.toDouble() ?? 10.0;
+          serviceCharge = (res['serviceCharge'] as num?)?.toDouble() ?? (subtotal * 0.01);
+          serviceChargePercent = (res['serviceChargePercent'] as num?)?.toDouble() ?? 1.0;
+          tax = (res['tax'] as num?)?.toDouble() ?? ((subtotal + serviceCharge) * 0.01);
+          taxPercent = (res['taxPercent'] as num?)?.toDouble() ?? 1.0;
           total = (res['total'] as num?)?.toDouble() ?? (subtotal + serviceCharge + tax);
           totalKhr = (res['totalKhr'] as num?)?.toDouble() ?? (total * 4100);
           depositPercent = (res['depositPercent'] as num?)?.toDouble() ?? 20.0;
@@ -185,26 +186,15 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   }
 
   Future<void> _selectDateRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDateRange: DateTimeRange(
-        start: checkInDate.isBefore(DateTime.now()) ? DateTime.now() : checkInDate,
-        end: checkOutDate.isAfter(checkInDate) ? checkOutDate : checkInDate.add(const Duration(days: 1)),
+    final picked = await Navigator.push<DateTimeRange>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SelectStayDatesScreen(
+          initialCheckIn: checkInDate,
+          initialCheckOut: checkOutDate,
+          hotelName: widget.hotel?.name ?? widget.service?.name,
+        ),
       ),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF0F172A),
-              primary: const Color(0xFF0F172A),
-              surface: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
 
     if (picked != null) {
@@ -234,9 +224,11 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
         if (res['valid'] == true) {
           appliedCoupon = res['code'];
           couponMessage = res['message'];
+          discount = (res['discountAmount'] as num?)?.toDouble() ?? 0.0;
         } else {
           appliedCoupon = null;
           couponMessage = res['message'] ?? 'Invalid coupon code';
+          discount = 0.0;
         }
       });
       _calculatePrice();
@@ -246,8 +238,8 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   void proceedToPayment() {
     final name = guestNameCtrl.text.trim();
     final rawPhone = guestPhoneCtrl.text.trim();
-    final cleanPhone = rawPhone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
-    if (name.isEmpty || cleanPhone.isEmpty) {
+    final cleanDigits = rawPhone.replaceAll(RegExp(r'\D'), '');
+    if (name.isEmpty || cleanDigits.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter guest name and phone number'),
@@ -265,10 +257,10 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       );
       return;
     }
-    if (!RegExp(r'^[0-9]{8,12}$').hasMatch(cleanPhone)) {
+    if (cleanDigits.length < 8 || cleanDigits.length > 10) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Phone number must be 8 to 12 digits (numbers only)'),
+          content: Text('Phone number must be 8 to 10 digits (e.g. 098-111-222)'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -294,7 +286,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
           finalPrice: total,
           couponCode: appliedCoupon,
           guestName: name,
-          guestPhone: cleanPhone,
+          guestPhone: rawPhone,
           guestEmail: guestEmailCtrl.text.trim(),
           notes: notesCtrl.text.trim(),
           unitCount: widget.unitCount > 0 ? widget.unitCount : 1,
@@ -317,7 +309,6 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dateFmt = DateFormat('EEE, MMM dd, yyyy');
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF090D16) : const Color(0xFFF8FAFC),
@@ -464,7 +455,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
             const SizedBox(height: 24),
 
             // ==========================================
-            // 2. CHECK-IN & CHECK-OUT CALENDAR SECTION
+            // 2. STAY DATES (CALENDAR)
             // ==========================================
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -540,7 +531,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                dateFmt.format(checkInDate),
+                                DateFormat('EEE, MMM dd, yyyy').format(checkInDate),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
@@ -593,7 +584,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                dateFmt.format(checkOutDate),
+                                DateFormat('EEE, MMM dd, yyyy').format(checkOutDate),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
@@ -1043,94 +1034,79 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
             const SizedBox(height: 24),
 
             // ==========================================
-            // 7. GUEST INFORMATION FORM
+            // 7. LEAD GUEST INFORMATION FORM (MATCHING PIC 2)
             // ==========================================
             Text(
-              'Guest Information',
+              'LEAD GUEST INFORMATION',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                letterSpacing: 0.8,
               ),
             ),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF131D32) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: isDark ? const Color(0xFF22314E) : Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: isDark ? const Color(0xFF22314E) : const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
+                  _buildLeadGuestField(
+                    label: 'Full Name',
                     controller: guestNameCtrl,
+                    hintText: 'e.g. Sokleng Meas',
                     keyboardType: TextInputType.name,
                     textCapitalization: TextCapitalization.words,
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z\u1780-\u17FF\s\.\-']")),
                       LengthLimitingTextInputFormatter(60),
                     ],
-                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                    decoration: InputDecoration(
-                      labelText: 'Primary Guest Full Name * (Letters only)',
-                      labelStyle: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700),
-                      prefixIcon: Icon(Icons.person_outline,
-                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                      enabledBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF334155))) : null,
-                      focusedBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF38BDF8))) : null,
-                    ),
+                    isDark: isDark,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
+                  const SizedBox(height: 14),
+                  _buildLeadGuestField(
+                    label: 'Phone Number',
                     controller: guestPhoneCtrl,
+                    hintText: '000-000-0000',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[\d\s\-\+]')),
-                      LengthLimitingTextInputFormatter(16),
+                      PhoneNumberFormatter(),
+                      LengthLimitingTextInputFormatter(12),
                     ],
-                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                    decoration: InputDecoration(
-                      labelText: 'Contact Phone Number * (Numbers only)',
-                      labelStyle: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700),
-                      prefixIcon: Icon(Icons.phone_outlined,
-                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                      enabledBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF334155))) : null,
-                      focusedBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF38BDF8))) : null,
-                    ),
+                    isDark: isDark,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
+                  const SizedBox(height: 14),
+                  _buildLeadGuestField(
+                    label: 'Email Address',
                     controller: guestEmailCtrl,
+                    hintText: 'e.g. customer@booking.com',
                     keyboardType: TextInputType.emailAddress,
-                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                    decoration: InputDecoration(
-                      labelText: 'Email Address (For booking confirmation & invoice)',
-                      labelStyle: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700),
-                      prefixIcon: Icon(Icons.email_outlined,
-                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                      enabledBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF334155))) : null,
-                      focusedBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF38BDF8))) : null,
-                    ),
+                    isDark: isDark,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
+                  const SizedBox(height: 14),
+                  _buildLeadGuestField(
+                    label: 'Special Requests (Optional)',
                     controller: notesCtrl,
+                    hintText: 'e.g. High floor, quiet room, late check-in',
                     maxLines: 2,
-                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                    decoration: InputDecoration(
-                      labelText: 'Special Requests / Arrival Notes',
-                      labelStyle: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700),
-                      prefixIcon: Icon(Icons.note_alt_outlined,
-                          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                      enabledBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF334155))) : null,
-                      focusedBorder: isDark ? const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF38BDF8))) : null,
-                    ),
+                    isDark: isDark,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // ==========================================
             // 8. CANCELLATION POLICY
@@ -1140,7 +1116,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade300),
+                border: Border.all(color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1170,47 +1146,158 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 28),
-
-            // ==========================================
-            // 9. PROCEED TO PAYMENT BUTTON
-            // ==========================================
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: isCalculating ? null : proceedToPayment,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFEAB308),
-                  foregroundColor: const Color(0xFF0F172A),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                child: isCalculating
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF0F172A)),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            payDepositOnly
-                                ? 'Pay Deposit (\$${depositRequired.toStringAsFixed(2)})'
-                                : 'Proceed to Pay \$${total.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward_rounded, size: 20),
-                        ],
-                      ),
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
           ],
         ),
       ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          border: Border(
+            top: BorderSide(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+              width: 1,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${widget.unitCount} room${widget.unitCount > 1 ? "s" : ""} • $nights night${nights > 1 ? "s" : ""}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                  Text(
+                    payDepositOnly
+                        ? '\$${depositRequired.toStringAsFixed(2)}'
+                        : '\$${total.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4F46E5),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: isCalculating ? null : proceedToPayment,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: isCalculating
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Text(
+                              'Proceed to Payment',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_rounded, size: 18),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLeadGuestField({
+    required String label,
+    required TextEditingController controller,
+    required String hintText,
+    TextInputType keyboardType = TextInputType.text,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+    List<TextInputFormatter>? inputFormatters,
+    int maxLines = 1,
+    required bool isDark,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textCapitalization: textCapitalization,
+          maxLines: maxLines,
+          inputFormatters: inputFormatters,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
+          ),
+          decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.normal,
+              color: isDark ? const Color(0xFF64748B) : Colors.grey.shade400,
+            ),
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color(0xFF4F46E5),
+                width: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1288,6 +1375,43 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  static String _formatPhoneNumber(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return '${digits.substring(0, 3)}-${digits.substring(3)}';
+    if (digits.length <= 9) {
+      return '${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}';
+    }
+    return '${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6, digits.length.clamp(6, 10))}';
+  }
+}
+
+class PhoneNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digitsOnly.length > 10) {
+      return oldValue;
+    }
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < digitsOnly.length; i++) {
+      if (i == 3 || i == 6) {
+        buffer.write('-');
+      }
+      buffer.write(digitsOnly[i]);
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

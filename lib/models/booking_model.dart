@@ -1,3 +1,4 @@
+﻿import '../services/room_service.dart';
 class BookingModel {
   final int id;
   final String bookingCode;
@@ -74,7 +75,7 @@ class BookingModel {
   factory BookingModel.fromJson(Map<String, dynamic> json) {
     String title = 'Hotel Room Stay';
     String provider = 'Hotel Front Desk';
-    String loc = 'Phnom Penh, Cambodia';
+    String loc = 'National Road 2, Ta Khmau, Kandal';
     String img = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600';
 
     String? hName;
@@ -93,13 +94,18 @@ class BookingModel {
       }
     }
 
-    if (json['room'] != null) {
-      rName = json['room']['name'] ?? 'Room ${json['room']['roomNumber'] ?? ''}';
-      rType = json['room']['type'];
-      rTier = json['room']['roomTier'];
+    final dynamic roomSource = json['room'] ??
+        ((json['items'] is List && (json['items'] as List).isNotEmpty && json['items'][0]['room'] != null)
+            ? json['items'][0]['room']
+            : null);
+
+    if (roomSource != null) {
+      rName = roomSource['name'] ?? 'Room ${roomSource['roomNumber'] ?? ''}';
+      rType = roomSource['type'];
+      rTier = roomSource['roomTier'];
       title = '$rName ${rTier != null ? "• $rTier" : ""}';
 
-      final dynamic rawRoomImages = json['room']['images'];
+      final dynamic rawRoomImages = roomSource['images'];
       if (rawRoomImages is String && rawRoomImages.trim().isNotEmpty) {
         final cleaned = rawRoomImages
             .replaceAllMapped(RegExp(r'(https?://)', caseSensitive: false), (m) => '\n${m[1]}')
@@ -113,8 +119,8 @@ class BookingModel {
         }
       } else if (rawRoomImages is List && rawRoomImages.isNotEmpty) {
         img = rawRoomImages.first.toString();
-      } else if (json['room']['imageUrl'] != null && json['room']['imageUrl'].toString().isNotEmpty) {
-        img = json['room']['imageUrl'].toString();
+      } else if (roomSource['imageUrl'] != null && roomSource['imageUrl'].toString().isNotEmpty) {
+        img = roomSource['imageUrl'].toString();
       }
     } else if (json['service'] != null) {
       title = json['service']['name'] ?? title;
@@ -198,7 +204,7 @@ class BookingModel {
       guestEmail: json['guestEmail'],
       status: json['status'] ?? 'CONFIRMED',
       cancellationReason: json['cancellationReason'],
-      imageUrl: img,
+      imageUrl: RoomService.safeWebUrl(img),
       hotelName: hName,
       roomName: rName,
       roomType: rType,

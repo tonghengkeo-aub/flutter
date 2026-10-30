@@ -7,6 +7,7 @@ import 'notification_service.dart';
 
 class BookingService {
   static final List<BookingModel> _localBookings = [];
+  static List<BookingModel> get localBookings => _localBookings;
 
   // ==========================================
   // AVAILABILITY & CONFLICT CHECKING
@@ -155,8 +156,8 @@ class BookingService {
     }
 
     double taxable = (roomTotal + extrasTotal - discount).clamp(0.0, double.infinity);
-    double serviceCharge = taxable * 0.05;
-    double tax = (taxable + serviceCharge) * 0.10;
+    double serviceCharge = taxable * 0.01;
+    double tax = (taxable + serviceCharge) * 0.01;
     double total = taxable + serviceCharge + tax;
     double depositRequired = total * 0.20;
     double balanceDue = total - depositRequired;
@@ -171,9 +172,9 @@ class BookingService {
       'discount': discount,
       'couponCode': cleanCode.isNotEmpty ? cleanCode : null,
       'serviceCharge': serviceCharge,
-      'serviceChargePercent': 5.0,
+      'serviceChargePercent': 1.0,
       'tax': tax,
-      'taxPercent': 10.0,
+      'taxPercent': 1.0,
       'total': total,
       'totalKhr': total * 4100,
       'depositPercent': 20.0,

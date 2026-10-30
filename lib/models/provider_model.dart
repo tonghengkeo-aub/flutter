@@ -1,4 +1,4 @@
-class ProviderModel {
+﻿class ProviderModel {
   final int id;
   final String name;
   final String title;

@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
+import '../screens/main_nav_screen.dart';
+import '../services/api_client.dart';
 import '../services/khqr_service.dart';
 
 class KhqrPaymentDialog extends StatefulWidget {
@@ -30,7 +33,15 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
   bool isChecking = false;
   String statusMessage = 'Generating KHQR payment code...';
   Timer? _pollTimer;
+  Timer? _countdownTimer;
+  int _remainingSeconds = 600; // 10 minutes countdown
   late AnimationController _pulseController;
+
+  String get _formattedTime {
+    final minutes = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_remainingSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
 
   @override
   void initState() {
@@ -46,8 +57,58 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _countdownTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    _remainingSeconds = 600;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (isPaid) {
+        timer.cancel();
+        return;
+      }
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        _handlePaymentTimeout();
+      } else {
+        setState(() {
+          _remainingSeconds--;
+        });
+      }
+    });
+  }
+
+  void _handlePaymentTimeout() async {
+    _pollTimer?.cancel();
+    _countdownTimer?.cancel();
+
+    if (widget.bookingId != null) {
+      try {
+        await http.delete(
+          Uri.parse('${ApiClient.baseUrl}/bookings/${widget.bookingId}'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(); // close payment dialog
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const MainNavScreen(
+          timeoutAlertMessage: 'The payment time limit has expired. Your pending reservation has been removed. Please book again when ready.\n\nរយៈពេលនៃការស្កេនទូទាត់ប្រាក់បានផុតកំណត់។ ការកក់ដែលមិនទាន់ទូទាត់ត្រូវបានលុបចោល។',
+        ),
+      ),
+      (route) => false,
+    );
   }
 
   Future<void> _initKhqr() async {
@@ -70,8 +131,9 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
           statusMessage = 'Scan QR code with ABA Mobile or any Bakong banking app';
         });
 
-        // Start polling payment status every 3 seconds
+        // Start polling payment status every 3 seconds & 5-minute countdown
         _startPolling(data.md5);
+        _startCountdown();
       }
     } catch (e) {
       if (mounted) {
@@ -85,7 +147,7 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
 
   void _startPolling(String md5) {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 2500), (timer) async {
       if (isPaid || !mounted) {
         timer.cancel();
         return;
@@ -109,28 +171,25 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
 
       if (res['paid'] == true && !isPaid) {
         _pollTimer?.cancel();
+        _countdownTimer?.cancel();
         if (mounted) {
           setState(() {
             isPaid = true;
             isChecking = false;
           });
+          widget.onPaymentSuccess(res);
 
-          // Wait 1.5 seconds to show celebration then callback
-          await Future.delayed(const Duration(milliseconds: 1500));
-          if (mounted) {
-            Navigator.of(context).pop();
-            widget.onPaymentSuccess(res);
-          }
+          // Automatically reload and navigate to Home after showing success celebration!
+          Future.delayed(const Duration(milliseconds: 3500), () {
+            if (mounted) {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const MainNavScreen()),
+                (route) => false,
+              );
+            }
+          });
         }
         return;
-      } else if (isManual && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment not detected yet. Please scan and complete in your banking app.'),
-            backgroundColor: Color(0xFFD97706),
-            duration: Duration(seconds: 2),
-          ),
-        );
       }
     } catch (_) {
     } finally {
@@ -140,102 +199,211 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
     }
   }
 
+  void _cancelAndGoHome() async {
+    _pollTimer?.cancel();
+    _countdownTimer?.cancel();
+
+    if (widget.bookingId != null && !isPaid) {
+      try {
+        await http.delete(
+          Uri.parse('${ApiClient.baseUrl}/bookings/${widget.bookingId}'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const MainNavScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Dialog(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(22),
-          child: isPaid ? _buildSuccessView(isDark) : _buildPaymentView(isDark),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          if (isPaid) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const MainNavScreen()),
+              (route) => false,
+            );
+          } else {
+            _cancelAndGoHome();
+          }
+        }
+      },
+      child: Dialog(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(22),
+            child: isPaid ? _buildSuccessView(isDark) : _buildPaymentView(isDark),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildSuccessView(bool isDark) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-            shape: BoxShape.circle,
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Confetti & Green Checkmark Stack matching Picture 2
+          SizedBox(
+            width: 140,
+            height: 140,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Decorative Confetti dots matching Picture 2
+                Positioned(top: 10, left: 24, child: _confettiDot(const Color(0xFF10B981), 8, 4, 25)),
+                Positioned(top: 18, right: 30, child: _confettiDot(const Color(0xFF38BDF8), 7, 7, 0)),
+                Positioned(top: 2, right: 60, child: _confettiDot(const Color(0xFF10B981), 6, 3, -15)),
+                Positioned(top: 14, left: 60, child: _confettiDot(const Color(0xFF0F172A), 4, 4, 45)),
+                Positioned(bottom: 25, left: 15, child: _confettiDot(const Color(0xFF38BDF8), 5, 8, 0)),
+                Positioned(bottom: 15, left: 45, child: _confettiDot(const Color(0xFF0F172A), 4, 4, 30)),
+                Positioned(bottom: 30, right: 18, child: _confettiDot(const Color(0xFF38BDF8), 6, 6, 45)),
+                Positioned(bottom: 15, right: 55, child: _confettiDot(const Color(0xFFFBBF24), 5, 5, 0)),
+                Positioned(top: 55, left: 10, child: _confettiDot(const Color(0xFFE11D48), 6, 3, -30)),
+
+                // Soft Mint Outer Circle
+                Container(
+                  width: 90,
+                  height: 90,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFD1FAE5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 58,
+                      height: 58,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF34D399),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 38,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 60),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Payment Successful!',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: isDark ? Colors.white : const Color(0xFF0F172A),
+          const SizedBox(height: 18),
+
+          // Big Bold Heading from Picture 2
+          Text(
+            'Payment Successful',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+              letterSpacing: -0.5,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Money received directly into ABA Bank account',
-          style: TextStyle(
-            fontSize: 13,
-            color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Amount Paid:', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                  Text('\$${widget.amountUsd.toStringAsFixed(2)} USD',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                ],
+          const SizedBox(height: 12),
+
+          // Subtitle from Picture 2
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Your payment has been confirmed. Your statement will show a payment to Boss Heng Luxury Hotel. Please check your booking details.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
               ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Booking Ref:', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                  Text(widget.billNumber,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Payment Method:', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                  Text('Bakong KHQR',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ],
+              textAlign: TextAlign.center,
+            ),
           ),
+          const SizedBox(height: 20),
+
+          // Receipt details card
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Amount Paid', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    Text(
+                      '\$${widget.amountUsd.toStringAsFixed(2)} USD',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text('Booking Ref', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    Text(
+                      widget.billNumber,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF0F172A)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // Clean action button
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                widget.onPaymentSuccess({'paid': true, 'billNumber': widget.billNumber});
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: const Text('View Booking Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _confettiDot(Color color, double width, double height, double rotateDeg) {
+    return Transform.rotate(
+      angle: rotateDeg * 3.14159 / 180,
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(2),
         ),
-        const SizedBox(height: 20),
-        const CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF10B981)),
-        const SizedBox(height: 10),
-        const Text(
-          'Confirming booking pass...',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-      ],
+      ),
     );
   }
 
@@ -286,7 +454,7 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
               ],
             ),
             IconButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: _cancelAndGoHome,
               icon: const Icon(Icons.close, size: 20),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -294,7 +462,45 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
           ],
         ),
 
-        const SizedBox(height: 18),
+        const SizedBox(height: 12),
+
+        // 5-Minute Countdown Timer Pill
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: _remainingSeconds <= 60
+                ? const Color(0xFFFEE2E2)
+                : (isDark ? const Color(0xFF1E293B) : const Color(0xFFFEF3C7)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: _remainingSeconds <= 60
+                  ? const Color(0xFFEF4444)
+                  : const Color(0xFFF59E0B),
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 16,
+                color: _remainingSeconds <= 60 ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'QR expires in $_formattedTime',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: _remainingSeconds <= 60 ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
 
         // Scannable QR Code Frame
         Container(
@@ -326,14 +532,16 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
                         QrImageView(
                           data: khqrData!.khqr,
                           version: QrVersions.auto,
-                          size: 220,
+                          errorCorrectionLevel: QrErrorCorrectLevel.M,
+                          size: 230,
+                          padding: const EdgeInsets.all(4),
                           eyeStyle: const QrEyeStyle(
                             eyeShape: QrEyeShape.square,
-                            color: Color(0xFF0F172A),
+                            color: Colors.black,
                           ),
                           dataModuleStyle: const QrDataModuleStyle(
                             dataModuleShape: QrDataModuleShape.square,
-                            color: Color(0xFF0F172A),
+                            color: Colors.black,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -403,9 +611,10 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  isChecking ? 'Verifying payment...' : statusMessage,
+                  statusMessage,
                   style: TextStyle(
                     fontSize: 12,
+                    fontWeight: FontWeight.w500,
                     color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700,
                   ),
                 ),
@@ -413,50 +622,8 @@ class _KhqrPaymentDialogState extends State<KhqrPaymentDialog> with SingleTicker
             );
           },
         ),
-
-        const SizedBox(height: 18),
-
-        // Deep Link Button: Open in ABA Mobile / Bakong
-        if (khqrData?.deeplink != null) ...[
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: ElevatedButton.icon(
-              onPressed: () => KhqrService.launchBakongDeeplink(khqrData!.deeplink),
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text(
-                'Open in ABA Mobile / Bakong App',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F3E6C),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-
-        // Manual Verify Button
-        SizedBox(
-          width: double.infinity,
-          height: 42,
-          child: OutlinedButton(
-            onPressed: isChecking ? null : () => _checkStatus(isManual: true),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: isDark ? const Color(0xFF334155) : Colors.grey.shade300),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: isChecking
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text(
-                    'I Have Completed Payment',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-          ),
-        ),
+        const SizedBox(height: 12),
       ],
-    );
+    );                                                                                                                                                            
   }
 }

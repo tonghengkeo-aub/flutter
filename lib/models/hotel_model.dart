@@ -1,4 +1,4 @@
-class HotelModel {
+﻿class HotelModel {
   final int id;
   final String name;
   final String description;
@@ -30,7 +30,7 @@ class HotelModel {
     required this.mainImage,
     required this.facilities,
     required this.status,
-    this.mapUrl = 'https://maps.google.com/?q=Riverside+Blvd+Phnom+Penh',
+    this.mapUrl = 'https://maps.app.goo.gl/HL3kPor7pDvYhUBT8',
     this.tagline = 'Luxury 5-Star Boutique & Riverside Retreat',
     this.starRating = 5,
     this.checkInTime = '02:00 PM',
@@ -45,7 +45,7 @@ class HotelModel {
       name: json['name'] ?? '',
       description: json['description'] ?? '',
       address: json['address'] ?? '',
-      province: json['province'] ?? 'Phnom Penh',
+      province: json['province'] ?? 'Kandal',
       phone: json['phone'] ?? '',
       email: json['email'] ?? '',
       rating: json['rating'] != null ? (double.tryParse(json['rating'].toString()) ?? 4.5) : 4.5,
@@ -54,7 +54,7 @@ class HotelModel {
       status: json['status'] ?? 'ACTIVE',
       mapUrl: json['mapUrl']?.toString().isNotEmpty == true
           ? json['mapUrl'].toString()
-          : 'https://maps.google.com/?q=Riverside+Blvd+Phnom+Penh',
+          : 'https://maps.app.goo.gl/HL3kPor7pDvYhUBT8',
       tagline: json['tagline']?.toString().isNotEmpty == true
           ? json['tagline'].toString()
           : 'Luxury 5-Star Boutique & Riverside Retreat',
